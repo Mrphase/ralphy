@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -52,14 +52,28 @@ function commandExists(name) {
 	}
 }
 
-function resolveLocalCommand(name) {
-	const ext = isWindows ? ".cmd" : "";
-	const localPath = join(__dirname, "node_modules", ".bin", `${name}${ext}`);
-	return existsSync(localPath) ? localPath : null;
+function getLocalTsxRunner(srcPath) {
+	const localCliPath = join(__dirname, "node_modules", "tsx", "dist", "cli.mjs");
+	if (!existsSync(localCliPath)) {
+		return null;
+	}
+
+	return {
+		command: process.execPath,
+		args: [localCliPath, srcPath],
+	};
 }
 
 function runCommand(command, args) {
 	if (isWindows) {
+		const lowerCommand = command.toLowerCase();
+		if (isAbsolute(command) || lowerCommand.endsWith(".exe") || lowerCommand.endsWith(".com")) {
+			return spawnSync(command, args, {
+				stdio: "inherit",
+				cwd: process.cwd(),
+			});
+		}
+
 		return spawnSync("cmd.exe", ["/c", command, ...args], {
 			stdio: "inherit",
 			cwd: process.cwd(),
@@ -89,10 +103,10 @@ function ensureVersionFile() {
 
 function getDevRunners(srcPath) {
 	const runners = [];
-	const localTsx = resolveLocalCommand("tsx");
+	const localTsx = getLocalTsxRunner(srcPath);
 
 	if (localTsx) {
-		runners.push({ command: localTsx, args: [srcPath] });
+		runners.push(localTsx);
 	}
 
 	if (commandExists("tsx")) {
@@ -131,6 +145,12 @@ function main() {
 
 			for (const runner of getDevRunners(srcPath)) {
 				const result = runCommand(runner.command, [...runner.args, ...userArgs]);
+				if (result.error) {
+					continue;
+				}
+				if (result.status === 126 || result.status === 127) {
+					continue;
+				}
 				if (result.error === undefined) {
 					process.exit(result.status ?? 1);
 				}

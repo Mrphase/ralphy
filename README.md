@@ -10,6 +10,12 @@ Autonomous AI coding loop. Runs AI agents on tasks until done.
 
 ## Install
 
+Supported quickstart paths:
+
+- npm global install
+- Windows local clone
+- WSL local clone
+
 **Option A: [npm](https://www.npmjs.com/package/ralphy-cli)** (recommended)
 ```bash
 npm install -g ralphy-cli
@@ -50,7 +56,29 @@ Windows local-clone quickstart:
 - PRD mode: `.\ralphy.ps1 --codex --prd .\example-prd.md --no-commit`
 - Troubleshooting and full setup: [WINDOWS_CODEX_SETUP.md](./WINDOWS_CODEX_SETUP.md)
 
-Both versions have identical features. Examples below use `ralphy` (npm) - substitute `./ralphy.sh` on macOS/Linux or `.\ralphy.ps1` / `ralphy.cmd` on Windows when running from a local clone.
+**Option D: WSL local clone**
+```bash
+cd /mnt/e/Ecode/ralphy
+./wsl_setup_codex.sh
+cd cli
+npm install --no-package-lock
+cd ..
+
+./ralphy-wsl.sh --help
+./ralphy-wsl.sh --codex "add login button"
+./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit
+```
+
+WSL local-clone quickstart:
+
+- Maintained local-clone entry: `./ralphy-wsl.sh`
+- Setup helper: `./wsl_setup_codex.sh`
+- Dependencies for local-clone mode: Linux `node`, Linux `npm`, Codex CLI in WSL
+- Single-task mode: `./ralphy-wsl.sh --codex "add login button"`
+- PRD mode: `./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit`
+- Full setup and troubleshooting: [WSL_CODEX_SETUP.md](./WSL_CODEX_SETUP.md)
+
+Both versions have identical features. Examples below use `ralphy` (npm) - substitute `./ralphy.sh` on macOS/Linux, `.\ralphy.ps1` / `ralphy.cmd` on Windows local clones, or `./ralphy-wsl.sh` on WSL local clones.
 
 ## Two Modes
 
