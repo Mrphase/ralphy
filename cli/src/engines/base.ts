@@ -64,13 +64,14 @@ export async function execCommand(
 		return { stdout, stderr, exitCode };
 	}
 
-	// Node.js fallback - use shell on Windows to execute .cmd wrappers
+	// Node.js fallback - use cmd.exe on Windows to execute .cmd wrappers
 	return new Promise((resolve) => {
-		const proc = spawn(command, args, {
+		const spawnCommand = isWindows ? "cmd.exe" : command;
+		const spawnArgs = isWindows ? ["/c", command, ...args] : args;
+		const proc = spawn(spawnCommand, spawnArgs, {
 			cwd: workDir,
 			env: { ...process.env, ...env },
 			stdio: [stdinContent ? "pipe" : "ignore", "pipe", "pipe"],
-			shell: isWindows, // Required on Windows for npm global commands (.cmd wrappers)
 		});
 
 		// Write stdin content if provided
@@ -292,13 +293,14 @@ export async function execCommandStreaming(
 		return { exitCode };
 	}
 
-	// Node.js fallback - use shell on Windows to execute .cmd wrappers
+	// Node.js fallback - use cmd.exe on Windows to execute .cmd wrappers
 	return new Promise((resolve) => {
-		const proc = spawn(command, args, {
+		const spawnCommand = isWindows ? "cmd.exe" : command;
+		const spawnArgs = isWindows ? ["/c", command, ...args] : args;
+		const proc = spawn(spawnCommand, spawnArgs, {
 			cwd: workDir,
 			env: { ...process.env, ...env },
 			stdio: [stdinContent ? "pipe" : "ignore", "pipe", "pipe"],
-			shell: isWindows, // Required on Windows for npm global commands (.cmd wrappers)
 		});
 
 		// Write stdin content if provided

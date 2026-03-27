@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === "win32";
+const userArgs = process.argv.slice(2);
 
 function getPlatformBinary() {
 	const platform = process.platform;
@@ -51,6 +52,64 @@ function commandExists(name) {
 	}
 }
 
+function resolveLocalCommand(name) {
+	const ext = isWindows ? ".cmd" : "";
+	const localPath = join(__dirname, "node_modules", ".bin", `${name}${ext}`);
+	return existsSync(localPath) ? localPath : null;
+}
+
+function runCommand(command, args) {
+	if (isWindows) {
+		return spawnSync("cmd.exe", ["/c", command, ...args], {
+			stdio: "inherit",
+			cwd: process.cwd(),
+		});
+	}
+
+	return spawnSync(command, args, {
+		stdio: "inherit",
+		cwd: process.cwd(),
+	});
+}
+
+function ensureVersionFile() {
+	const versionFilePath = join(__dirname, "src", "version.ts");
+	if (existsSync(versionFilePath)) {
+		return true;
+	}
+
+	const generatorPath = join(__dirname, "scripts", "generate-version.js");
+	const result = spawnSync(process.execPath, [generatorPath], {
+		stdio: "inherit",
+		cwd: __dirname,
+	});
+
+	return result.status === 0;
+}
+
+function getDevRunners(srcPath) {
+	const runners = [];
+	const localTsx = resolveLocalCommand("tsx");
+
+	if (localTsx) {
+		runners.push({ command: localTsx, args: [srcPath] });
+	}
+
+	if (commandExists("tsx")) {
+		runners.push({ command: "tsx", args: [srcPath] });
+	}
+
+	if (commandExists("bun")) {
+		runners.push({ command: "bun", args: ["run", srcPath] });
+	}
+
+	if (commandExists("npx")) {
+		runners.push({ command: "npx", args: ["--yes", "tsx", srcPath] });
+	}
+
+	return runners;
+}
+
 function main() {
 	const binaryPath = getPlatformBinary();
 
@@ -58,30 +117,20 @@ function main() {
 		// Fallback: try running with tsx or bun directly (development mode)
 		const srcPath = join(__dirname, "src", "index.ts");
 		if (existsSync(srcPath)) {
-			// Prefer tsx on Windows (better compatibility with simple-git)
-			const runners = isWindows ? ["tsx", "bun"] : ["bun", "tsx"];
+			const nodeModulesPath = join(__dirname, "node_modules");
+			if (!existsSync(nodeModulesPath)) {
+				console.error("Dependencies are not installed.");
+				console.error("Run 'npm install --no-package-lock' in the cli directory first.");
+				process.exit(1);
+			}
 
-			for (const runner of runners) {
-				if (!commandExists(runner)) continue;
+			if (!ensureVersionFile()) {
+				console.error("Failed to generate cli/src/version.ts.");
+				process.exit(1);
+			}
 
-				const runnerArgs = runner === "bun" ? ["run", srcPath] : [srcPath];
-				const userArgs = process.argv.slice(2);
-
-				let result;
-				if (isWindows) {
-					// On Windows, use cmd.exe /c to run .cmd files
-					// Node.js handles argument escaping when passed as array
-					result = spawnSync("cmd.exe", ["/c", runner, ...runnerArgs, ...userArgs], {
-						stdio: "inherit",
-						cwd: process.cwd(),
-					});
-				} else {
-					result = spawnSync(runner, [...runnerArgs, ...userArgs], {
-						stdio: "inherit",
-						cwd: process.cwd(),
-					});
-				}
-
+			for (const runner of getDevRunners(srcPath)) {
+				const result = runCommand(runner.command, [...runner.args, ...userArgs]);
 				if (result.error === undefined) {
 					process.exit(result.status ?? 1);
 				}
@@ -89,12 +138,13 @@ function main() {
 		}
 
 		console.error(`Binary not found: ${binaryPath}`);
-		console.error("Run 'bun run build' to compile the binary for your platform.");
-		console.error("Or install tsx: npm install -g tsx");
+		console.error("For a local Windows clone, run 'cd cli && npm install --no-package-lock' first.");
+		console.error("Then rerun this command; the launcher will generate cli/src/version.ts automatically.");
+		console.error("If you prefer the compiled binary path, run 'bun run build:windows-x64'.");
 		process.exit(1);
 	}
 
-	const result = spawnSync(binaryPath, process.argv.slice(2), {
+	const result = spawnSync(binaryPath, userArgs, {
 		stdio: "inherit",
 		cwd: process.cwd(),
 	});

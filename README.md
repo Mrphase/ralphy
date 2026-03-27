@@ -28,7 +28,29 @@ cd ralphy && chmod +x ralphy.sh
 ./ralphy.sh --prd PRD.md
 ```
 
-Both versions have identical features. Examples below use `ralphy` (npm) - substitute `./ralphy.sh` if using the bash script.
+**Option C: Windows local clone**
+```powershell
+git clone https://github.com/michaelshimeles/ralphy.git E:\Ecode\ralphy
+cd E:\Ecode\ralphy\cli
+npm install --no-package-lock
+cd ..
+
+.\ralphy.ps1 --help
+.\ralphy.ps1 --codex "add login button"
+.\ralphy.ps1 --codex --prd .\example-prd.md --no-commit
+cmd /c ralphy.cmd --codex "summarize this repository"
+```
+
+Windows local-clone quickstart:
+
+- PowerShell entry: `.\ralphy.ps1`
+- CMD entry: `cmd /c ralphy.cmd`
+- Dependencies for local-clone mode: Node.js 18+, npm, Codex CLI
+- Single-task mode: `.\ralphy.ps1 --codex "add login button"`
+- PRD mode: `.\ralphy.ps1 --codex --prd .\example-prd.md --no-commit`
+- Troubleshooting and full setup: [WINDOWS_CODEX_SETUP.md](./WINDOWS_CODEX_SETUP.md)
+
+Both versions have identical features. Examples below use `ralphy` (npm) - substitute `./ralphy.sh` on macOS/Linux or `.\ralphy.ps1` / `ralphy.cmd` on Windows when running from a local clone.
 
 ## Two Modes
 
