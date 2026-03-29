@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	appendLearning,
-	extractLearning,
 	formatKnowledgeForPrompt,
 	getAgentsMdPath,
 	getProgressMdPath,
@@ -123,26 +122,6 @@ describe("knowledge manager", () => {
 		});
 	});
 
-	describe("extractLearning", () => {
-		it("creates structured metadata for completed tasks", () => {
-			const learning = extractLearning("Ship feature", "Claude", "completed");
-
-			expect(learning.task).toBe("Ship feature");
-			expect(learning.engine).toBe("Claude");
-			expect(learning.status).toBe("completed");
-			expect(learning.learnings).toEqual([]);
-			expect(learning.issuesEncountered).toEqual([]);
-			expect(learning.timestamp).toBeString();
-		});
-
-		it("records the error message for failed tasks", () => {
-			const learning = extractLearning("Fix bug", "Claude", "failed", "Network timeout");
-
-			expect(learning.status).toBe("failed");
-			expect(learning.issuesEncountered).toEqual(["Network timeout"]);
-		});
-	});
-
 	describe("appendLearning consolidation", () => {
 		it("consolidates only Learnings items after every five entries", async () => {
 			initProgressMd(workDir);
@@ -167,6 +146,50 @@ describe("knowledge manager", () => {
 			expect(summarySection).toContain("- Pattern 5");
 			expect(summarySection).not.toContain("- Ignored issue 1");
 			expect(content).toContain("# Iteration Learnings");
+		});
+
+		it("can consolidate lazily when knowledge context is read", () => {
+			writeFileSync(
+				getProgressMdPath(workDir),
+				[
+					"# Codebase Patterns (Auto-Updated Summary)",
+					"",
+					"_No patterns recorded yet. Patterns will be consolidated after 5 iterations._",
+					"",
+					"---",
+					"",
+					"# Iteration Learnings",
+					"",
+					'## [2026-03-29T00:01:00Z] Task: "Task 1"',
+					"- Learnings:",
+					"  - Pattern 1",
+					"- Issues Encountered:",
+					"  - Ignored issue 1",
+					"",
+					'## [2026-03-29T00:02:00Z] Task: "Task 2"',
+					"- Learnings:",
+					"  - Pattern 2",
+					"",
+					'## [2026-03-29T00:03:00Z] Task: "Task 3"',
+					"- Learnings:",
+					"  - Pattern 3",
+					"",
+					'## [2026-03-29T00:04:00Z] Task: "Task 4"',
+					"- Learnings:",
+					"  - Pattern 4",
+					"",
+					'## [2026-03-29T00:05:00Z] Task: "Task 5"',
+					"- Learnings:",
+					"  - Pattern 5",
+					"",
+				].join("\n"),
+				"utf-8",
+			);
+
+			const context = readKnowledgeContext({ enabled: true, contextWindow: 2 }, workDir);
+
+			expect(context.patternsSection).toContain("- Pattern 1");
+			expect(context.patternsSection).not.toContain("- Ignored issue 1");
 		});
 	});
 

@@ -135,6 +135,7 @@ export function readKnowledgeContext(
 
 	const agentsPath = getAgentsMdPath(workDir);
 	const progressPath = getProgressMdPath(workDir);
+	consolidateIfNeeded(workDir);
 
 	const agentsContent = existsSync(agentsPath) ? readFileSync(agentsPath, "utf-8").trim() : "";
 
@@ -210,32 +211,7 @@ export async function appendLearning(
 	}
 
 	// Periodically consolidate patterns
-	await maybeConsolidatePatterns(workDir);
-}
-
-/**
- * Extract a basic learning entry from task output and git diff
- */
-export function extractLearning(
-	task: string,
-	engine: string,
-	status: "completed" | "failed",
-	errorMessage?: string,
-): TaskLearning {
-	const issuesEncountered: string[] = [];
-
-	if (status === "failed" && errorMessage) {
-		issuesEncountered.push(errorMessage.slice(0, 200));
-	}
-
-	return {
-		timestamp: new Date().toISOString(),
-		task,
-		engine,
-		status,
-		learnings: [],
-		issuesEncountered,
-	};
+	consolidateIfNeeded(workDir);
 }
 
 /**
@@ -279,7 +255,7 @@ function collectEntryLearnings(entry: string): string[] {
 /**
  * Consolidate patterns every CONSOLIDATE_EVERY iterations
  */
-async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> {
+export function consolidateIfNeeded(workDir = process.cwd()): void {
 	const count = countLearningEntries(workDir);
 	if (count === 0 || count % CONSOLIDATE_EVERY !== 0) return;
 
@@ -295,10 +271,7 @@ async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> 
 
 	for (const entry of entries) {
 		for (const learning of collectEntryLearnings(entry)) {
-			if (
-				!allLearnings.includes(learning) &&
-				allLearnings.length < MAX_CONSOLIDATED_PATTERNS
-			) {
+			if (!allLearnings.includes(learning) && allLearnings.length < MAX_CONSOLIDATED_PATTERNS) {
 				allLearnings.push(learning);
 			}
 		}

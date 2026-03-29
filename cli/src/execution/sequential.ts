@@ -4,7 +4,6 @@ import { createTaskBranch, returnToBaseBranch } from "../git/branch.ts";
 import { syncPrdToIssue } from "../git/issue-sync.ts";
 import { createPullRequest } from "../git/pr.ts";
 import type { KnowledgeOptions } from "../knowledge/index.ts";
-import { appendLearning, extractLearning } from "../knowledge/manager.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
@@ -186,12 +185,6 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 					logTaskProgress(task.title, "completed", workDir);
 					result.tasksCompleted++;
 
-					// Extract and store knowledge learnings
-					if (knowledge?.enabled !== false) {
-						const learning = extractLearning(task.title, engine.name, "completed");
-						await appendLearning(learning, workDir);
-					}
-
 					// Sync PRD to GitHub issue if configured
 					if (syncIssue && options.prdFile) {
 						await syncPrdToIssue(options.prdFile, syncIssue, workDir);
@@ -248,11 +241,6 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 						// Mark task complete so we don't retry it infinitely
 						await taskSource.markComplete(task.id);
 						clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
-						// Extract and store failure learnings
-						if (knowledge?.enabled !== false) {
-							const learning = extractLearning(task.title, engine.name, "failed", errMsg);
-							await appendLearning(learning, workDir);
-						}
 					}
 				}
 			} catch (error) {
@@ -288,11 +276,6 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 					// Mark task complete so we don't retry it infinitely
 					await taskSource.markComplete(task.id);
 					clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
-					// Extract and store failure learnings
-					if (knowledge?.enabled !== false) {
-						const learning = extractLearning(task.title, engine.name, "failed", errorMsg);
-						await appendLearning(learning, workDir);
-					}
 				}
 			}
 		}

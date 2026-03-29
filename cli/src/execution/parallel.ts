@@ -19,7 +19,6 @@ import {
 	createAgentWorktree,
 	getWorktreeBase,
 } from "../git/worktree.ts";
-import { appendLearning, extractLearning } from "../knowledge/manager.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { formatDuration, logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
@@ -101,6 +100,11 @@ async function runAgentInWorktree(
 		if (!existsSync(ralphyDir)) {
 			mkdirSync(ralphyDir, { recursive: true });
 		}
+		const progressSrc = join(originalDir, RALPHY_DIR, "progress.md");
+		const progressDest = join(worktreeDir, RALPHY_DIR, "progress.md");
+		if (existsSync(progressSrc) && !existsSync(progressDest)) {
+			copyFileSync(progressSrc, progressDest);
+		}
 
 		// Build prompt
 		const prompt = buildParallelPrompt({
@@ -110,6 +114,7 @@ async function runAgentInWorktree(
 			skipTests,
 			skipLint,
 			browserEnabled,
+			workDir: originalDir,
 			knowledge,
 		});
 
@@ -196,6 +201,11 @@ async function runAgentInSandbox(
 		if (!existsSync(ralphyDir)) {
 			mkdirSync(ralphyDir, { recursive: true });
 		}
+		const progressSrc = join(originalDir, RALPHY_DIR, "progress.md");
+		const progressDest = join(sandboxDir, RALPHY_DIR, "progress.md");
+		if (existsSync(progressSrc) && !existsSync(progressDest)) {
+			copyFileSync(progressSrc, progressDest);
+		}
 
 		// Build prompt
 		const prompt = buildParallelPrompt({
@@ -206,6 +216,7 @@ async function runAgentInSandbox(
 			skipLint,
 			browserEnabled,
 			allowCommit: false,
+			workDir: originalDir,
 			knowledge,
 		});
 
@@ -504,10 +515,6 @@ export async function runParallel(
 						notifyTaskFailed(task.title, failureReason);
 						await taskSource.markComplete(task.id);
 						clearDeferredTask(taskSource.type, task, workDir, prdFile);
-						if (knowledge?.enabled !== false) {
-							const learning = extractLearning(task.title, engine.name, "failed", failureReason);
-							await appendLearning(learning, workDir);
-						}
 						retryableFailure = false;
 					} else {
 						logWarn(`Task "${task.title}" deferred (${deferrals}/${maxRetries}): ${failureReason}`);
@@ -523,10 +530,6 @@ export async function runParallel(
 					// This prevents infinite retry loops - the task has already been retried maxRetries times
 					await taskSource.markComplete(task.id);
 					clearDeferredTask(taskSource.type, task, workDir, prdFile);
-					if (knowledge?.enabled !== false) {
-						const learning = extractLearning(task.title, engine.name, "failed", failureReason);
-						await appendLearning(learning, workDir);
-					}
 				}
 			} else if (aiResult?.success) {
 				logSuccess(`Task "${task.title}" completed`);
@@ -536,10 +539,6 @@ export async function runParallel(
 				await taskSource.markComplete(task.id);
 				logTaskProgress(task.title, "completed", workDir);
 				result.tasksCompleted++;
-				if (knowledge?.enabled !== false) {
-					const learning = extractLearning(task.title, engine.name, "completed");
-					await appendLearning(learning, workDir);
-				}
 
 				notifyTaskComplete(task.title);
 				clearDeferredTask(taskSource.type, task, workDir, prdFile);
@@ -561,10 +560,6 @@ export async function runParallel(
 						failureReason = errMsg;
 						await taskSource.markComplete(task.id);
 						clearDeferredTask(taskSource.type, task, workDir, prdFile);
-						if (knowledge?.enabled !== false) {
-							const learning = extractLearning(task.title, engine.name, "failed", errMsg);
-							await appendLearning(learning, workDir);
-						}
 						retryableFailure = false;
 					} else {
 						logWarn(`Task "${task.title}" deferred (${deferrals}/${maxRetries}): ${errMsg}`);
@@ -582,10 +577,6 @@ export async function runParallel(
 					// This prevents infinite retry loops - the task has already been retried maxRetries times
 					await taskSource.markComplete(task.id);
 					clearDeferredTask(taskSource.type, task, workDir, prdFile);
-					if (knowledge?.enabled !== false) {
-						const learning = extractLearning(task.title, engine.name, "failed", errMsg);
-						await appendLearning(learning, workDir);
-					}
 				}
 			}
 
