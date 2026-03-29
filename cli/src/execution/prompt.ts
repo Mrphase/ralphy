@@ -268,10 +268,11 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	instructions.push(`${step}. Update ${progressFile} with what you did`);
 	step++;
 	instructions.push(`${step}. ${getKnowledgeWriteInstruction(task)}`);
-	step++;
 	if (allowCommit) {
+		step++;
 		instructions.push(`${step}. Commit your changes with a descriptive message`);
 	} else {
+		step++;
 		instructions.push(`${step}. Do NOT run git commit; changes will be collected automatically`);
 	}
 

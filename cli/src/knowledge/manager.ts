@@ -135,7 +135,6 @@ export function readKnowledgeContext(
 
 	const agentsPath = getAgentsMdPath(workDir);
 	const progressPath = getProgressMdPath(workDir);
-	consolidateIfNeeded(workDir);
 
 	const agentsContent = existsSync(agentsPath) ? readFileSync(agentsPath, "utf-8").trim() : "";
 
@@ -145,7 +144,7 @@ export function readKnowledgeContext(
 	if (existsSync(progressPath)) {
 		let raw = readFileSync(progressPath, "utf-8");
 		if (shouldConsolidate(raw)) {
-			consolidateIfNeeded(workDir);
+			consolidateIfNeeded(workDir, raw);
 			raw = readFileSync(progressPath, "utf-8");
 		}
 		const parts = raw.split(/^---$/m);
@@ -215,18 +214,6 @@ export async function appendLearning(
 	}
 }
 
-/**
- * Count the number of learning entries in progress.md
- */
-function countLearningEntries(workDir = process.cwd()): number {
-	const path = getProgressMdPath(workDir);
-	if (!existsSync(path)) return 0;
-
-	const content = readFileSync(path, "utf-8");
-	const matches = content.match(/^## \[/gm);
-	return matches ? matches.length : 0;
-}
-
 function collectEntryLearnings(entry: string): string[] {
 	const lines = entry.split("\n");
 	const learnings: string[] = [];
@@ -264,16 +251,14 @@ function shouldConsolidate(raw: string): boolean {
 /**
  * Consolidate patterns every CONSOLIDATE_EVERY iterations
  */
-export function consolidateIfNeeded(workDir = process.cwd()): void {
-	const count = countLearningEntries(workDir);
-	if (count === 0 || count % CONSOLIDATE_EVERY !== 0) return;
-
+export function consolidateIfNeeded(workDir = process.cwd(), raw?: string): void {
 	const path = getProgressMdPath(workDir);
-	const raw = readFileSync(path, "utf-8");
+	const content = raw ?? (existsSync(path) ? readFileSync(path, "utf-8") : "");
+	if (!shouldConsolidate(content)) return;
 
 	// Extract only `- Learnings:` bullets from each entry.
 	const allLearnings: string[] = [];
-	const entries = raw
+	const entries = content
 		.split(/^## \[/m)
 		.slice(1)
 		.map((entry) => `## [${entry.trim()}`);
@@ -292,10 +277,10 @@ export function consolidateIfNeeded(workDir = process.cwd()): void {
 	const newPatternsSection = `# Codebase Patterns (Auto-Updated Summary)\n\n${patternLines}\n`;
 
 	// Replace the section before the first "---" separator
-	const separatorIndex = raw.indexOf("\n---\n");
+	const separatorIndex = content.indexOf("\n---\n");
 	if (separatorIndex === -1) return;
 
-	const afterSeparator = raw.slice(separatorIndex);
+	const afterSeparator = content.slice(separatorIndex);
 	const updated = `${newPatternsSection}${afterSeparator}`;
 
 	try {
