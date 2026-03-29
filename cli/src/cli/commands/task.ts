@@ -46,6 +46,11 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 		browserEnabled: options.browserEnabled,
 		skipTests: options.skipTests,
 		skipLint: options.skipLint,
+		knowledge: {
+			enabled: options.knowledge,
+			contextWindow: options.knowledgeContext,
+			maxChars: options.knowledgeMaxChars,
+		},
 	});
 
 	// Build active settings for display
@@ -107,6 +112,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 			spinner.success(`Done ${tokens}`);
 
 			logTaskProgress(task, "completed", workDir);
+
 			await sendNotifications(config, "completed", {
 				tasksCompleted: 1,
 				tasksFailed: 0,

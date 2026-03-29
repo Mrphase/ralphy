@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import YAML from "yaml";
+import { initAgentsMd, initProgressMd } from "../knowledge/manager.ts";
 import { detectProject } from "./detector.ts";
 import { getConfigPath, getProgressPath, getRalphyDir } from "./loader.ts";
 import type { RalphyConfig } from "./types.ts";
@@ -79,6 +80,10 @@ export function initConfig(workDir = process.cwd()): {
 
 	// Create progress file
 	writeFileSync(progressPath, "# Ralphy Progress Log\n\n", "utf-8");
+
+	// Create knowledge files (progress.md and AGENTS.md)
+	initProgressMd(workDir);
+	initAgentsMd(workDir, detected);
 
 	return { created: true, detected };
 }

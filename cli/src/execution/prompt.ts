@@ -1,6 +1,13 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
+import {
+	AGENTS_MD_FILE,
+	DEFAULT_KNOWLEDGE_OPTIONS,
+	type KnowledgeOptions,
+	formatKnowledgeForPrompt,
+	readKnowledgeContext,
+} from "../knowledge/index.ts";
 import { getBrowserInstructions, isBrowserAvailable } from "./browser.ts";
 
 interface PromptOptions {
@@ -11,6 +18,8 @@ interface PromptOptions {
 	skipTests?: boolean;
 	skipLint?: boolean;
 	prdFile?: string;
+	/** Knowledge system options */
+	knowledge?: KnowledgeOptions;
 }
 
 /**
@@ -29,6 +38,14 @@ function detectAgentSkills(workDir: string): string[] {
 	return candidates.filter((p) => existsSync(p));
 }
 
+function getKnowledgeWriteInstruction(task: string): string {
+	return [
+		"Append a learning entry to .ralphy/progress.md after finishing.",
+		`Use this format exactly: ## [ISO_TIMESTAMP] Task: "${task}"`,
+		'Under it, add a - Learnings: section and indent each learning bullet exactly like "  - your learning".',
+	].join(" ");
+}
+
 /**
  * Build the full prompt with project context, rules, boundaries, and task
  */
@@ -41,9 +58,20 @@ export function buildPrompt(options: PromptOptions): string {
 		skipTests = false,
 		skipLint = false,
 		prdFile,
+		knowledge,
 	} = options;
 
 	const parts: string[] = [];
+
+	// Inject knowledge context (AGENTS.md + recent learnings from progress.md)
+	if (knowledge?.enabled !== false) {
+		const knowledgeOpts = knowledge ?? DEFAULT_KNOWLEDGE_OPTIONS;
+		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
+		const knowledgeSection = formatKnowledgeForPrompt(ctx, knowledgeOpts);
+		if (knowledgeSection) {
+			parts.push(knowledgeSection);
+		}
+	}
 
 	// Add project context if available
 	const context = loadProjectContext(workDir);
@@ -70,9 +98,11 @@ export function buildPrompt(options: PromptOptions): string {
 	// Add boundaries - combine system boundaries with user-defined boundaries
 	// System boundaries come first to ensure they are prominently visible
 	const userBoundaries = loadBoundaries(workDir);
+	const agentsBoundary = `.ralphy/${AGENTS_MD_FILE}`;
 	const systemBoundaries = [
 		prdFile || "the PRD file",
 		".ralphy/progress.txt",
+		agentsBoundary,
 		".ralphy-worktrees",
 		".ralphy-sandboxes",
 	];
@@ -124,6 +154,8 @@ export function buildPrompt(options: PromptOptions): string {
 
 	instructions.push(`${step}. Ensure the code works correctly`);
 	step++;
+	instructions.push(`${step}. ${getKnowledgeWriteInstruction(task)}`);
+	step++;
 
 	if (autoCommit) {
 		instructions.push(`${step}. Commit your changes with a descriptive message`);
@@ -143,6 +175,8 @@ interface ParallelPromptOptions {
 	skipLint?: boolean;
 	browserEnabled?: "auto" | "true" | "false";
 	allowCommit?: boolean;
+	/** Knowledge system options */
+	knowledge?: KnowledgeOptions;
 }
 
 /**
@@ -158,7 +192,19 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 		skipLint = false,
 		browserEnabled = "auto",
 		allowCommit = true,
+		knowledge,
 	} = options;
+
+	// Inject knowledge context at the top
+	let knowledgeSection = "";
+	if (knowledge?.enabled !== false) {
+		const knowledgeOpts = knowledge ?? DEFAULT_KNOWLEDGE_OPTIONS;
+		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
+		const formatted = formatKnowledgeForPrompt(ctx, knowledgeOpts);
+		if (formatted) {
+			knowledgeSection = `\n\n${formatted}`;
+		}
+	}
 
 	// Parallel execution typically runs in a worktree
 	const skillRoots = detectAgentSkills(workDir);
@@ -193,9 +239,11 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	// Build boundaries section - combine system boundaries with user-defined boundaries
 	// System boundaries come first to ensure they are prominently visible
 	const userBoundaries = loadBoundaries(workDir);
+	const agentsBoundary = `.ralphy/${AGENTS_MD_FILE}`;
 	const systemBoundaries = [
 		prdFile || "the PRD file",
 		".ralphy/progress.txt",
+		agentsBoundary,
 		".ralphy-worktrees",
 		".ralphy-sandboxes",
 	];
@@ -219,13 +267,15 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 
 	instructions.push(`${step}. Update ${progressFile} with what you did`);
 	step++;
+	instructions.push(`${step}. ${getKnowledgeWriteInstruction(task)}`);
+	step++;
 	if (allowCommit) {
 		instructions.push(`${step}. Commit your changes with a descriptive message`);
 	} else {
 		instructions.push(`${step}. Do NOT run git commit; changes will be collected automatically`);
 	}
 
-	return `You are working on a specific task. Focus ONLY on this task:
+	return `You are working on a specific task. Focus ONLY on this task:${knowledgeSection}
 
 TASK: ${task}${rulesSection}${boundariesSection}${browserSection}${skillsSection}
 
