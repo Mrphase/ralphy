@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
 import {
+	DEFAULT_KNOWLEDGE_OPTIONS,
 	type KnowledgeOptions,
 	formatKnowledgeForPrompt,
 	readKnowledgeContext,
@@ -55,7 +56,7 @@ export function buildPrompt(options: PromptOptions): string {
 
 	// Inject knowledge context (AGENTS.md + recent learnings from progress.md)
 	if (knowledge?.enabled !== false) {
-		const knowledgeOpts = knowledge ?? { enabled: true, contextWindow: 10 };
+		const knowledgeOpts = knowledge ?? DEFAULT_KNOWLEDGE_OPTIONS;
 		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
 		const knowledgeSection = formatKnowledgeForPrompt(ctx, knowledgeOpts);
 		if (knowledgeSection) {
@@ -189,7 +190,7 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	// Inject knowledge context at the top
 	let knowledgeSection = "";
 	if (knowledge?.enabled !== false) {
-		const knowledgeOpts = knowledge ?? { enabled: true, contextWindow: 10 };
+		const knowledgeOpts = knowledge ?? DEFAULT_KNOWLEDGE_OPTIONS;
 		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
 		const formatted = formatKnowledgeForPrompt(ctx, knowledgeOpts);
 		if (formatted) {
