@@ -18,6 +18,7 @@ export const AGENTS_MD_FILE = "AGENTS.md";
  */
 const CONSOLIDATE_EVERY = 5;
 const MAX_CONSOLIDATED_PATTERNS = 20;
+const NO_PATTERNS_PLACEHOLDER = `_No patterns recorded yet. Patterns will be consolidated after ${CONSOLIDATE_EVERY} iterations._`;
 
 /**
  * Get the full path to progress.md
@@ -42,7 +43,7 @@ export function initProgressMd(workDir = process.cwd()): void {
 
 	const content = `# Codebase Patterns (Auto-Updated Summary)
 
-_No patterns recorded yet. Patterns will be consolidated after ${CONSOLIDATE_EVERY} iterations._
+${NO_PATTERNS_PLACEHOLDER}
 
 ---
 
@@ -153,7 +154,7 @@ export function readKnowledgeContext(
 		if (parts.length >= 1) {
 			const patternBlock = parts[0].trim();
 			// Only include if it has actual content beyond the placeholder
-			if (!patternBlock.includes("No patterns recorded yet")) {
+			if (!patternBlock.includes(NO_PATTERNS_PLACEHOLDER)) {
 				patternsSection = patternBlock;
 			}
 		}
@@ -241,7 +242,7 @@ function collectEntryLearnings(entry: string): string[] {
 }
 
 function shouldConsolidate(raw: string): boolean {
-	const hasPlaceholder = raw.includes("No patterns recorded yet");
+	const hasPlaceholder = raw.includes(NO_PATTERNS_PLACEHOLDER);
 	if (!hasPlaceholder) return false;
 
 	const entryCount = raw.match(/^## \[/gm)?.length ?? 0;
