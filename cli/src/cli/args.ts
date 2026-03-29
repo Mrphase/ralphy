@@ -56,6 +56,9 @@ export function createProgram(): Command {
 		.option("--model <name>", "Override default model for the engine")
 		.option("--sonnet", "Shortcut for --claude --model sonnet")
 		.option("--no-merge", "Skip automatic branch merging after parallel execution")
+		.option("--no-knowledge", "Disable cross-iteration knowledge system")
+		.option("--knowledge-context <n>", "Number of recent learnings to inject into prompts", "10")
+		.option("--knowledge-max-chars <n>", "Maximum characters of knowledge to inject", "8000")
 		.option("-v, --verbose", "Verbose output")
 		.allowUnknownOption();
 
@@ -71,6 +74,7 @@ export function parseArgs(args: string[]): {
 	initMode: boolean;
 	showConfig: boolean;
 	addRule: string | undefined;
+	knowledgeCommand: "show" | "reset" | undefined;
 } {
 	// Find the -- separator and extract engine-specific arguments
 	const separatorIndex = args.indexOf("--");
@@ -86,7 +90,19 @@ export function parseArgs(args: string[]): {
 	program.parse(ralphyArgs);
 
 	const opts = program.opts();
-	const [task] = program.args;
+	const [firstArg, secondArg] = program.args;
+
+	// Handle `ralphy knowledge show|reset` subcommand
+	let knowledgeCommand: "show" | "reset" | undefined;
+	if (firstArg === "knowledge") {
+		if (secondArg === "show" || secondArg === "reset") {
+			knowledgeCommand = secondArg;
+		} else {
+			knowledgeCommand = "show"; // default to show
+		}
+	}
+
+	const task = knowledgeCommand ? undefined : firstArg;
 
 	// Determine AI engine (--sonnet implies --claude)
 	let aiEngine = "claude";
@@ -159,6 +175,9 @@ export function parseArgs(args: string[]): {
 		skipMerge: opts.merge === false,
 		useSandbox: opts.sandbox || false,
 		engineArgs,
+		knowledge: opts.knowledge !== false,
+		knowledgeContext: Number.parseInt(opts.knowledgeContext, 10) || 10,
+		knowledgeMaxChars: Number.parseInt(opts.knowledgeMaxChars, 10) || 8000,
 	};
 
 	return {
@@ -167,6 +186,7 @@ export function parseArgs(args: string[]): {
 		initMode: opts.init || false,
 		showConfig: opts.config || false,
 		addRule: opts.addRule,
+		knowledgeCommand,
 	};
 }
 

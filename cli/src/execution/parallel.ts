@@ -19,6 +19,7 @@ import {
 	createAgentWorktree,
 	getWorktreeBase,
 } from "../git/worktree.ts";
+import { PROGRESS_MD_FILE } from "../knowledge/manager.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { formatDuration, logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
@@ -61,6 +62,7 @@ async function runAgentInWorktree(
 	browserEnabled: "auto" | "true" | "false",
 	modelOverride?: string,
 	engineArgs?: string[],
+	knowledge?: import("../knowledge/index.ts").KnowledgeOptions,
 ): Promise<ParallelAgentResult> {
 	let worktreeDir = "";
 	let branchName = "";
@@ -99,6 +101,11 @@ async function runAgentInWorktree(
 		if (!existsSync(ralphyDir)) {
 			mkdirSync(ralphyDir, { recursive: true });
 		}
+		const progressSrc = join(originalDir, RALPHY_DIR, PROGRESS_MD_FILE);
+		const progressDest = join(worktreeDir, RALPHY_DIR, PROGRESS_MD_FILE);
+		if (existsSync(progressSrc) && !existsSync(progressDest)) {
+			copyFileSync(progressSrc, progressDest);
+		}
 
 		// Build prompt
 		const prompt = buildParallelPrompt({
@@ -108,6 +115,8 @@ async function runAgentInWorktree(
 			skipTests,
 			skipLint,
 			browserEnabled,
+			workDir: originalDir,
+			knowledge,
 		});
 
 		// Execute with retry
@@ -155,6 +164,7 @@ async function runAgentInSandbox(
 	browserEnabled: "auto" | "true" | "false",
 	modelOverride?: string,
 	engineArgs?: string[],
+	knowledge?: import("../knowledge/index.ts").KnowledgeOptions,
 ): Promise<ParallelAgentResult> {
 	const uniqueSuffix = Math.random().toString(36).substring(2, 8);
 	const sandboxDir = join(sandboxBase, `agent-${agentNum}-${uniqueSuffix}`);
@@ -192,6 +202,11 @@ async function runAgentInSandbox(
 		if (!existsSync(ralphyDir)) {
 			mkdirSync(ralphyDir, { recursive: true });
 		}
+		const progressSrc = join(originalDir, RALPHY_DIR, PROGRESS_MD_FILE);
+		const progressDest = join(sandboxDir, RALPHY_DIR, PROGRESS_MD_FILE);
+		if (existsSync(progressSrc) && !existsSync(progressDest)) {
+			copyFileSync(progressSrc, progressDest);
+		}
 
 		// Build prompt
 		const prompt = buildParallelPrompt({
@@ -202,6 +217,8 @@ async function runAgentInSandbox(
 			skipLint,
 			browserEnabled,
 			allowCommit: false,
+			workDir: originalDir,
+			knowledge,
 		});
 
 		// Execute with retry
@@ -267,6 +284,7 @@ export async function runParallel(
 		useSandbox = false,
 		engineArgs,
 		syncIssue,
+		knowledge,
 	} = options;
 
 	const shouldFallbackToSandbox = (error: string | undefined): boolean => {
@@ -399,6 +417,7 @@ export async function runParallel(
 					browserEnabled,
 					modelOverride,
 					engineArgs,
+					knowledge,
 				);
 
 			if (effectiveUseSandbox) {
@@ -422,6 +441,7 @@ export async function runParallel(
 				browserEnabled,
 				modelOverride,
 				engineArgs,
+				knowledge,
 			).then((res) => {
 				if (shouldFallbackToSandbox(res.error)) {
 					logWarn(`Agent ${globalAgentNum}: Worktree unavailable, retrying in sandbox mode.`);

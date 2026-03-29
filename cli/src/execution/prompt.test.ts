@@ -27,8 +27,10 @@ describe("buildPrompt", () => {
 			expect(result).toContain("Do NOT modify these files/directories:");
 			expect(result).toContain("- the PRD file");
 			expect(result).toContain("- .ralphy/progress.txt");
+			expect(result).toContain("- .ralphy/AGENTS.md");
 			expect(result).toContain("- .ralphy-worktrees");
 			expect(result).toContain("- .ralphy-sandboxes");
+			expect(result).not.toContain("- .ralphy/progress.md");
 		});
 
 		it("should use specific PRD file name when provided", () => {
@@ -286,8 +288,10 @@ describe("buildParallelPrompt", () => {
 			expect(result).toContain("Boundaries - Do NOT modify:");
 			expect(result).toContain("- the PRD file");
 			expect(result).toContain("- .ralphy/progress.txt");
+			expect(result).toContain("- .ralphy/AGENTS.md");
 			expect(result).toContain("- .ralphy-worktrees");
 			expect(result).toContain("- .ralphy-sandboxes");
+			expect(result).not.toContain("- .ralphy/progress.md");
 		});
 
 		it("should use specific PRD file when provided", () => {

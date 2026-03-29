@@ -3,6 +3,7 @@ import type { AIEngine, AIResult } from "../engines/types.ts";
 import { createTaskBranch, returnToBaseBranch } from "../git/branch.ts";
 import { syncPrdToIssue } from "../git/issue-sync.ts";
 import { createPullRequest } from "../git/pr.ts";
+import type { KnowledgeOptions } from "../knowledge/index.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
@@ -40,6 +41,8 @@ export interface ExecutionOptions {
 	engineArgs?: string[];
 	/** GitHub issue number to sync PRD with on each iteration */
 	syncIssue?: number;
+	/** Knowledge system options */
+	knowledge?: KnowledgeOptions;
 }
 
 export interface ExecutionResult {
@@ -73,6 +76,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 		modelOverride,
 		engineArgs,
 		syncIssue,
+		knowledge,
 	} = options;
 
 	const result: ExecutionResult = {
@@ -123,6 +127,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 			skipTests,
 			skipLint,
 			prdFile: options.prdFile,
+			knowledge,
 		});
 
 		// Execute with spinner

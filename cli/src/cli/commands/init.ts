@@ -35,11 +35,14 @@ export async function runInit(workDir = process.cwd()): Promise<void> {
 	console.log("");
 	console.log(`  ${pc.cyan(".ralphy/config.yaml")}   - Your rules and preferences`);
 	console.log(`  ${pc.cyan(".ralphy/progress.txt")} - Progress log (auto-updated)`);
+	console.log(`  ${pc.cyan(".ralphy/progress.md")}  - Cross-iteration learning log`);
+	console.log(`  ${pc.cyan(".ralphy/AGENTS.md")}    - Agent instructions (edit to customize)`);
 	console.log("");
 	console.log(pc.bold("Next steps:"));
-	console.log(`  1. Add rules:  ${pc.cyan('ralphy --add-rule "your rule here"')}`);
-	console.log(`  2. Or edit:    ${pc.cyan(".ralphy/config.yaml")}`);
+	console.log(`  1. Add rules:     ${pc.cyan('ralphy --add-rule "your rule here"')}`);
+	console.log(`  2. Edit agents:   ${pc.cyan(".ralphy/AGENTS.md")}`);
+	console.log(`  3. Or edit:       ${pc.cyan(".ralphy/config.yaml")}`);
 	console.log(
-		`  3. Run:        ${pc.cyan('ralphy "your task"')} or ${pc.cyan("ralphy")} (with PRD.md)`,
+		`  4. Run:           ${pc.cyan('ralphy "your task"')} or ${pc.cyan("ralphy")} (with PRD.md)`,
 	);
 }
