@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	appendLearning,
+	consolidateIfNeeded,
 	formatKnowledgeForPrompt,
 	getAgentsMdPath,
 	getProgressMdPath,
@@ -139,6 +140,7 @@ describe("knowledge manager", () => {
 					workDir,
 				);
 			}
+			consolidateIfNeeded(workDir);
 
 			const content = readFileSync(getProgressMdPath(workDir), "utf-8");
 			const summarySection = content.split("\n---\n")[0];

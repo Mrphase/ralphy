@@ -19,6 +19,7 @@ import {
 	createAgentWorktree,
 	getWorktreeBase,
 } from "../git/worktree.ts";
+import { PROGRESS_MD_FILE } from "../knowledge/manager.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { formatDuration, logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
@@ -100,8 +101,8 @@ async function runAgentInWorktree(
 		if (!existsSync(ralphyDir)) {
 			mkdirSync(ralphyDir, { recursive: true });
 		}
-		const progressSrc = join(originalDir, RALPHY_DIR, "progress.md");
-		const progressDest = join(worktreeDir, RALPHY_DIR, "progress.md");
+		const progressSrc = join(originalDir, RALPHY_DIR, PROGRESS_MD_FILE);
+		const progressDest = join(worktreeDir, RALPHY_DIR, PROGRESS_MD_FILE);
 		if (existsSync(progressSrc) && !existsSync(progressDest)) {
 			copyFileSync(progressSrc, progressDest);
 		}
@@ -201,8 +202,8 @@ async function runAgentInSandbox(
 		if (!existsSync(ralphyDir)) {
 			mkdirSync(ralphyDir, { recursive: true });
 		}
-		const progressSrc = join(originalDir, RALPHY_DIR, "progress.md");
-		const progressDest = join(sandboxDir, RALPHY_DIR, "progress.md");
+		const progressSrc = join(originalDir, RALPHY_DIR, PROGRESS_MD_FILE);
+		const progressDest = join(sandboxDir, RALPHY_DIR, PROGRESS_MD_FILE);
 		if (existsSync(progressSrc) && !existsSync(progressDest)) {
 			copyFileSync(progressSrc, progressDest);
 		}

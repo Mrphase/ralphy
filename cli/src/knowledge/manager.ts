@@ -143,7 +143,11 @@ export function readKnowledgeContext(
 	let recentLearnings = "";
 
 	if (existsSync(progressPath)) {
-		const raw = readFileSync(progressPath, "utf-8");
+		let raw = readFileSync(progressPath, "utf-8");
+		if (shouldConsolidate(raw)) {
+			consolidateIfNeeded(workDir);
+			raw = readFileSync(progressPath, "utf-8");
+		}
 		const parts = raw.split(/^---$/m);
 
 		// First section before the separator is the patterns block
@@ -209,9 +213,6 @@ export async function appendLearning(
 		const errorMessage = err instanceof Error ? err.message : String(err);
 		logDebug(`Knowledge write failed: ${errorMessage}`);
 	}
-
-	// Periodically consolidate patterns
-	consolidateIfNeeded(workDir);
 }
 
 /**
@@ -250,6 +251,14 @@ function collectEntryLearnings(entry: string): string[] {
 	}
 
 	return learnings;
+}
+
+function shouldConsolidate(raw: string): boolean {
+	const hasPlaceholder = raw.includes("No patterns recorded yet");
+	if (!hasPlaceholder) return false;
+
+	const entryCount = raw.match(/^## \[/gm)?.length ?? 0;
+	return entryCount > 0 && entryCount % CONSOLIDATE_EVERY === 0;
 }
 
 /**

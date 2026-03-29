@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
 import {
+	AGENTS_MD_FILE,
 	DEFAULT_KNOWLEDGE_OPTIONS,
 	type KnowledgeOptions,
 	formatKnowledgeForPrompt,
@@ -39,7 +40,7 @@ function detectAgentSkills(workDir: string): string[] {
 
 function getKnowledgeWriteInstruction(task: string): string {
 	return [
-		`Append a learning entry to .ralphy/progress.md after finishing.`,
+		"Append a learning entry to .ralphy/progress.md after finishing.",
 		`Use this format exactly: ## [ISO_TIMESTAMP] Task: "${task}"`,
 		"Under it, add a - Learnings: section with bullet points summarizing what you discovered.",
 	].join(" ");
@@ -97,10 +98,11 @@ export function buildPrompt(options: PromptOptions): string {
 	// Add boundaries - combine system boundaries with user-defined boundaries
 	// System boundaries come first to ensure they are prominently visible
 	const userBoundaries = loadBoundaries(workDir);
+	const agentsBoundary = `.ralphy/${AGENTS_MD_FILE}`;
 	const systemBoundaries = [
 		prdFile || "the PRD file",
 		".ralphy/progress.txt",
-		".ralphy/AGENTS.md",
+		agentsBoundary,
 		".ralphy-worktrees",
 		".ralphy-sandboxes",
 	];
@@ -237,10 +239,11 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	// Build boundaries section - combine system boundaries with user-defined boundaries
 	// System boundaries come first to ensure they are prominently visible
 	const userBoundaries = loadBoundaries(workDir);
+	const agentsBoundary = `.ralphy/${AGENTS_MD_FILE}`;
 	const systemBoundaries = [
 		prdFile || "the PRD file",
 		".ralphy/progress.txt",
-		".ralphy/AGENTS.md",
+		agentsBoundary,
 		".ralphy-worktrees",
 		".ralphy-sandboxes",
 	];
