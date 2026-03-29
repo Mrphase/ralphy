@@ -67,6 +67,8 @@ export interface RuntimeOptions {
 	knowledge: boolean;
 	/** Number of recent learnings to inject into prompts */
 	knowledgeContext: number;
+	/** Maximum number of knowledge characters to inject into prompts */
+	knowledgeMaxChars: number;
 	/** Skip running tests */
 	skipTests: boolean;
 	/** Skip running lint */
@@ -148,4 +150,5 @@ export const DEFAULT_OPTIONS: RuntimeOptions = {
 	browserEnabled: "auto",
 	knowledge: true,
 	knowledgeContext: 10,
+	knowledgeMaxChars: 8000,
 };

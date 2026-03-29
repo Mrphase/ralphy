@@ -58,6 +58,7 @@ export function createProgram(): Command {
 		.option("--no-merge", "Skip automatic branch merging after parallel execution")
 		.option("--no-knowledge", "Disable cross-iteration knowledge system")
 		.option("--knowledge-context <n>", "Number of recent learnings to inject into prompts", "10")
+		.option("--knowledge-max-chars <n>", "Maximum characters of knowledge to inject", "8000")
 		.option("-v, --verbose", "Verbose output")
 		.allowUnknownOption();
 
@@ -176,6 +177,7 @@ export function parseArgs(args: string[]): {
 		engineArgs,
 		knowledge: opts.knowledge !== false,
 		knowledgeContext: Number.parseInt(opts.knowledgeContext, 10) || 10,
+		knowledgeMaxChars: Number.parseInt(opts.knowledgeMaxChars, 10) || 8000,
 	};
 
 	return {

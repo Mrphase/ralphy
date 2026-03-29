@@ -57,7 +57,7 @@ export function buildPrompt(options: PromptOptions): string {
 	if (knowledge?.enabled !== false) {
 		const knowledgeOpts = knowledge ?? { enabled: true, contextWindow: 10 };
 		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
-		const knowledgeSection = formatKnowledgeForPrompt(ctx);
+		const knowledgeSection = formatKnowledgeForPrompt(ctx, knowledgeOpts);
 		if (knowledgeSection) {
 			parts.push(knowledgeSection);
 		}
@@ -191,7 +191,7 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	if (knowledge?.enabled !== false) {
 		const knowledgeOpts = knowledge ?? { enabled: true, contextWindow: 10 };
 		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
-		const formatted = formatKnowledgeForPrompt(ctx);
+		const formatted = formatKnowledgeForPrompt(ctx, knowledgeOpts);
 		if (formatted) {
 			knowledgeSection = `\n\n${formatted}`;
 		}

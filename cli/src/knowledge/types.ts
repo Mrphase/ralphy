@@ -30,9 +30,12 @@ export interface KnowledgeOptions {
 	enabled: boolean;
 	/** Number of recent learnings to inject (default: 10) */
 	contextWindow: number;
+	/** Maximum number of characters to inject into prompts */
+	maxChars?: number;
 }
 
 export const DEFAULT_KNOWLEDGE_OPTIONS: KnowledgeOptions = {
 	enabled: true,
 	contextWindow: 10,
+	maxChars: 8000,
 };

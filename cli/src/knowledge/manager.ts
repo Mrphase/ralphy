@@ -2,7 +2,12 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getRalphyDir } from "../config/loader.ts";
-import type { KnowledgeContext, KnowledgeOptions, TaskLearning } from "./types.ts";
+import {
+	DEFAULT_KNOWLEDGE_OPTIONS,
+	type KnowledgeContext,
+	type KnowledgeOptions,
+	type TaskLearning,
+} from "./types.ts";
 
 export const PROGRESS_MD_FILE = "progress.md";
 export const AGENTS_MD_FILE = "AGENTS.md";
@@ -120,7 +125,9 @@ export function readKnowledgeContext(
 	options: KnowledgeOptions,
 	workDir = process.cwd(),
 ): KnowledgeContext {
-	if (!options.enabled) {
+	const mergedOptions = { ...DEFAULT_KNOWLEDGE_OPTIONS, ...options };
+
+	if (!mergedOptions.enabled) {
 		return { agentsContent: "", recentLearnings: "", patternsSection: "" };
 	}
 
@@ -152,7 +159,7 @@ export function readKnowledgeContext(
 			.filter((e) => e.trim().length > 0)
 			.map((e) => `## [${e.trim()}`);
 
-		const recent = entries.slice(-options.contextWindow);
+		const recent = entries.slice(-mergedOptions.contextWindow);
 		if (recent.length > 0) {
 			recentLearnings = recent.join("\n\n");
 		}
@@ -313,22 +320,59 @@ async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> 
 /**
  * Format knowledge context as a prompt section
  */
-export function formatKnowledgeForPrompt(context: KnowledgeContext): string {
-	const parts: string[] = [];
+export function formatKnowledgeForPrompt(
+	context: KnowledgeContext,
+	options: KnowledgeOptions = DEFAULT_KNOWLEDGE_OPTIONS,
+): string {
+	const mergedOptions = { ...DEFAULT_KNOWLEDGE_OPTIONS, ...options };
+	const agentsSection = context.agentsContent
+		? `## Agent Instructions\n${context.agentsContent}`
+		: "";
 
-	if (context.agentsContent) {
-		parts.push(`## Agent Instructions\n${context.agentsContent}`);
+	const joinSections = (patternsSection: string, recentLearnings: string): string =>
+		[
+			agentsSection,
+			patternsSection && `## Known Codebase Patterns\n${patternsSection}`,
+			recentLearnings && `## Recent Task Learnings\n${recentLearnings}`,
+		]
+			.filter(Boolean)
+			.join("\n\n");
+
+	let patternsSection = context.patternsSection;
+	let recentLearnings = context.recentLearnings;
+	let combined = joinSections(patternsSection, recentLearnings);
+
+	if (combined.length <= mergedOptions.maxChars) {
+		return combined;
 	}
 
-	if (context.patternsSection) {
-		parts.push(`## Known Codebase Patterns\n${context.patternsSection}`);
+	if (recentLearnings) {
+		const recentEntries = recentLearnings
+			.split(/^## \[/m)
+			.filter((entry) => entry.trim().length > 0)
+			.map((entry) => `## [${entry.trim()}`);
+
+		while (recentEntries.length > 0) {
+			recentEntries.shift();
+			recentLearnings = recentEntries.join("\n\n");
+			combined = joinSections(patternsSection, recentLearnings);
+			if (combined.length <= mergedOptions.maxChars) {
+				return combined;
+			}
+		}
+		recentLearnings = "";
 	}
 
-	if (context.recentLearnings) {
-		parts.push(`## Recent Task Learnings\n${context.recentLearnings}`);
+	if (patternsSection) {
+		const patternLines = patternsSection.split("\n");
+		while (patternLines.length > 0 && combined.length > mergedOptions.maxChars) {
+			patternLines.pop();
+			patternsSection = patternLines.join("\n").trimEnd();
+			combined = joinSections(patternsSection, recentLearnings);
+		}
 	}
 
-	return parts.join("\n\n");
+	return combined;
 }
 
 /**

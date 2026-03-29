@@ -47,7 +47,11 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 		browserEnabled: options.browserEnabled,
 		skipTests: options.skipTests,
 		skipLint: options.skipLint,
-		knowledge: { enabled: options.knowledge, contextWindow: options.knowledgeContext },
+		knowledge: {
+			enabled: options.knowledge,
+			contextWindow: options.knowledgeContext,
+			maxChars: options.knowledgeMaxChars,
+		},
 	});
 
 	// Build active settings for display

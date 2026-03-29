@@ -112,7 +112,11 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 
 	// Run tasks
 	let result: ExecutionResult;
-	const knowledgeOptions = { enabled: options.knowledge, contextWindow: options.knowledgeContext };
+	const knowledgeOptions = {
+		enabled: options.knowledge,
+		contextWindow: options.knowledgeContext,
+		maxChars: options.knowledgeMaxChars,
+	};
 
 	if (options.parallel) {
 		result = await runParallel({
