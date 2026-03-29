@@ -205,7 +205,8 @@ export async function appendLearning(
 	try {
 		await appendFile(path, lines.join("\n"), "utf-8");
 	} catch (err) {
-		logDebug(`Knowledge write failed: ${err}`);
+		const errorMessage = err instanceof Error ? err.message : String(err);
+		logDebug(`Knowledge write failed: ${errorMessage}`);
 	}
 
 	// Periodically consolidate patterns
@@ -318,7 +319,8 @@ async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> 
 	try {
 		writeFileSync(path, updated, "utf-8");
 	} catch (err) {
-		logDebug(`Knowledge write failed: ${err}`);
+		const errorMessage = err instanceof Error ? err.message : String(err);
+		logDebug(`Knowledge write failed: ${errorMessage}`);
 	}
 }
 
@@ -330,6 +332,7 @@ export function formatKnowledgeForPrompt(
 	options: KnowledgeOptions = DEFAULT_KNOWLEDGE_OPTIONS,
 ): string {
 	const mergedOptions = { ...DEFAULT_KNOWLEDGE_OPTIONS, ...options };
+	const maxChars = mergedOptions.maxChars ?? DEFAULT_KNOWLEDGE_OPTIONS.maxChars ?? 8000;
 	const agentsSection = context.agentsContent
 		? `## Agent Instructions\n${context.agentsContent}`
 		: "";
@@ -347,7 +350,7 @@ export function formatKnowledgeForPrompt(
 	let recentLearnings = context.recentLearnings;
 	let combined = joinSections(patternsSection, recentLearnings);
 
-	if (combined.length <= mergedOptions.maxChars) {
+	if (combined.length <= maxChars) {
 		return combined;
 	}
 
@@ -361,7 +364,7 @@ export function formatKnowledgeForPrompt(
 			recentEntries.shift();
 			recentLearnings = recentEntries.join("\n\n");
 			combined = joinSections(patternsSection, recentLearnings);
-			if (combined.length <= mergedOptions.maxChars) {
+			if (combined.length <= maxChars) {
 				return combined;
 			}
 		}
@@ -370,7 +373,7 @@ export function formatKnowledgeForPrompt(
 
 	if (patternsSection) {
 		const patternLines = patternsSection.split("\n");
-		while (patternLines.length > 0 && combined.length > mergedOptions.maxChars) {
+		while (patternLines.length > 0 && combined.length > maxChars) {
 			patternLines.pop();
 			patternsSection = patternLines.join("\n").trimEnd();
 			combined = joinSections(patternsSection, recentLearnings);
