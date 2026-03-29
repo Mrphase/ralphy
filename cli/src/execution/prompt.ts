@@ -91,6 +91,7 @@ export function buildPrompt(options: PromptOptions): string {
 	const systemBoundaries = [
 		prdFile || "the PRD file",
 		".ralphy/progress.txt",
+		".ralphy/AGENTS.md",
 		".ralphy-worktrees",
 		".ralphy-sandboxes",
 	];
@@ -232,6 +233,7 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	const systemBoundaries = [
 		prdFile || "the PRD file",
 		".ralphy/progress.txt",
+		".ralphy/AGENTS.md",
 		".ralphy-worktrees",
 		".ralphy-sandboxes",
 	];
