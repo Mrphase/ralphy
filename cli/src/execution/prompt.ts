@@ -37,6 +37,14 @@ function detectAgentSkills(workDir: string): string[] {
 	return candidates.filter((p) => existsSync(p));
 }
 
+function getKnowledgeWriteInstruction(task: string): string {
+	return [
+		`Append a learning entry to .ralphy/progress.md after finishing.`,
+		`Use this format exactly: ## [ISO_TIMESTAMP] Task: "${task}"`,
+		`Under it, add a - Learnings: section with bullet points summarizing what you discovered.`,
+	].join(" ");
+}
+
 /**
  * Build the full prompt with project context, rules, boundaries, and task
  */
@@ -144,9 +152,7 @@ export function buildPrompt(options: PromptOptions): string {
 
 	instructions.push(`${step}. Ensure the code works correctly`);
 	step++;
-	instructions.push(
-		`${step}. After finishing, append a learning entry to .ralphy/progress.md at the end using this format: ## [ISO_TIMESTAMP] Task: "${task}" followed by a - Learnings: section with bullet points summarizing what you discovered`,
-	);
+	instructions.push(`${step}. ${getKnowledgeWriteInstruction(task)}`);
 	step++;
 
 	if (autoCommit) {
@@ -258,9 +264,7 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 
 	instructions.push(`${step}. Update ${progressFile} with what you did`);
 	step++;
-	instructions.push(
-		`${step}. After finishing, append a learning entry to .ralphy/progress.md at the end using this format: ## [ISO_TIMESTAMP] Task: "${task}" followed by a - Learnings: section with bullet points summarizing what you discovered`,
-	);
+	instructions.push(`${step}. ${getKnowledgeWriteInstruction(task)}`);
 	step++;
 	if (allowCommit) {
 		instructions.push(`${step}. Commit your changes with a descriptive message`);
