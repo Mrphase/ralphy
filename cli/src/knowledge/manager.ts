@@ -248,6 +248,14 @@ function shouldConsolidate(raw: string): boolean {
 	return entryCount > 0 && entryCount % CONSOLIDATE_EVERY === 0;
 }
 
+function countLearningEntries(workDir = process.cwd()): number {
+	const path = getProgressMdPath(workDir);
+	if (!existsSync(path)) return 0;
+
+	const raw = readFileSync(path, "utf-8");
+	return raw.match(/^## \[/gm)?.length ?? 0;
+}
+
 /**
  * Consolidate patterns every CONSOLIDATE_EVERY iterations
  */
