@@ -96,6 +96,25 @@ After that, add any project rules you want:
 .\ralphy.ps1 --add-rule "run tests before finishing"
 ```
 
+Knowledge files created by `--init`:
+
+- `.ralphy\config.yaml`
+- `.ralphy\progress.txt`
+- `.ralphy\progress.md`
+- `.ralphy\AGENTS.md`
+
+Inspect them with:
+
+```powershell
+.\ralphy.ps1 knowledge show
+```
+
+Reset them with:
+
+```powershell
+.\ralphy.ps1 knowledge reset
+```
+
 ## 7. Run Single-Task Mode With Codex
 
 Example:
@@ -118,6 +137,17 @@ Example with direct Codex flags:
 ```powershell
 .\ralphy.ps1 --codex --model gpt-5.4 "summarize the repo structure" -- --profile default
 ```
+
+To inspect the next prompt without executing the task:
+
+```powershell
+.\ralphy.ps1 --codex --dry-run --no-tests --no-lint "do not make changes"
+```
+
+After you have at least one learning entry in `.ralphy\progress.md`, the dry-run prompt should include:
+
+- `## Agent Instructions`
+- `## Recent Task Learnings`
 
 ## 8. Run PRD Mode With Codex
 
@@ -144,6 +174,8 @@ cd E:\Ecode\ralphy
 cmd /c ralphy.cmd --help
 cmd /c ralphy.cmd --codex "summarize this repository"
 ```
+
+For a full learning-oriented knowledge-transfer walkthrough, see [KNOWLEDGE_TRANSFER_GUIDE.md](./KNOWLEDGE_TRANSFER_GUIDE.md).
 
 ## 10. Troubleshooting
 

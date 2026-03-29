@@ -77,6 +77,7 @@ WSL local-clone quickstart:
 - Single-task mode: `./ralphy-wsl.sh --codex "add login button"`
 - PRD mode: `./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit`
 - Full setup and troubleshooting: [WSL_CODEX_SETUP.md](./WSL_CODEX_SETUP.md)
+- Knowledge-transfer walkthrough: [KNOWLEDGE_TRANSFER_GUIDE.md](./KNOWLEDGE_TRANSFER_GUIDE.md)
 
 Both versions have identical features. Examples below use `ralphy` (npm) - substitute `./ralphy.sh` on macOS/Linux, `.\ralphy.ps1` / `ralphy.cmd` on Windows local clones, or `./ralphy-wsl.sh` on WSL local clones.
 
@@ -127,6 +128,40 @@ boundaries:
 ```
 
 Rules apply to all tasks (single or PRD).
+
+## Cross-Iteration Knowledge
+
+Ralphy can carry forward working knowledge between iterations.
+
+After `ralphy --init`, it creates:
+
+- `.ralphy/AGENTS.md` for persistent project instructions
+- `.ralphy/progress.md` for iteration learnings and consolidated patterns
+
+Useful commands:
+
+```bash
+ralphy knowledge show
+ralphy knowledge reset
+```
+
+Useful flags:
+
+```bash
+ralphy --no-knowledge
+ralphy --knowledge-context 5
+ralphy --knowledge-max-chars 4000
+```
+
+Recommended flow:
+
+1. Run `ralphy --init`
+2. Edit `.ralphy/AGENTS.md` with project rules and gotchas
+3. Run one task with your preferred engine
+4. Check `ralphy knowledge show`
+5. Use `--dry-run` to inspect how `AGENTS.md` and recent learnings are injected into the next prompt
+
+For a full step-by-step Codex walkthrough, see [KNOWLEDGE_TRANSFER_GUIDE.md](./KNOWLEDGE_TRANSFER_GUIDE.md).
 
 ## AI Engines
 
@@ -361,6 +396,9 @@ ralphy --parallel --sandbox
 | `--base-branch NAME` | base branch |
 | `--create-pr` | create PRs |
 | `--draft-pr` | draft PRs |
+| `--no-knowledge` | disable cross-iteration knowledge injection |
+| `--knowledge-context N` | inject the last N learning entries |
+| `--knowledge-max-chars N` | cap injected knowledge size |
 | `--no-tests` | skip tests |
 | `--no-lint` | skip lint |
 | `--fast` | skip tests + lint |
@@ -375,6 +413,8 @@ ralphy --parallel --sandbox
 | `--init` | setup .ralphy/ config |
 | `--config` | show config |
 | `--add-rule "rule"` | add rule to config |
+
+`knowledge show` and `knowledge reset` are also available as positional commands.
 
 ## Requirements
 

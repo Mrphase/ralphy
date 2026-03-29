@@ -132,6 +132,25 @@ Add project-wide rules if needed:
 ./ralphy-wsl.sh --add-rule "run tests before finishing"
 ```
 
+Knowledge files created by `--init`:
+
+- `.ralphy/config.yaml`
+- `.ralphy/progress.txt`
+- `.ralphy/progress.md`
+- `.ralphy/AGENTS.md`
+
+Inspect them with:
+
+```bash
+./ralphy-wsl.sh knowledge show
+```
+
+Reset them with:
+
+```bash
+./ralphy-wsl.sh knowledge reset
+```
+
 ## 9. Run Single-Task Mode
 
 ```bash
@@ -152,6 +171,17 @@ Example:
 ```bash
 ./ralphy-wsl.sh --codex --model gpt-5.4 "summarize the repo structure" -- --profile default
 ```
+
+To inspect the next prompt without executing the task:
+
+```bash
+./ralphy-wsl.sh --codex --dry-run --no-tests --no-lint "do not make changes"
+```
+
+After you have at least one learning entry in `.ralphy/progress.md`, the dry-run prompt should include:
+
+- `## Agent Instructions`
+- `## Recent Task Learnings`
 
 ## 10. Run PRD Mode
 
@@ -221,3 +251,5 @@ Codex prints plugin sync `403 Forbidden` warnings:
 
 - Linux Node.js is still missing from WSL
 - Run `./wsl_setup_codex.sh` first
+
+For a full learning-oriented knowledge-transfer walkthrough, see [KNOWLEDGE_TRANSFER_GUIDE.md](./KNOWLEDGE_TRANSFER_GUIDE.md).
