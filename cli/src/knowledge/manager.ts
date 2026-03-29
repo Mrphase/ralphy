@@ -240,6 +240,32 @@ function countLearningEntries(workDir = process.cwd()): number {
 	return matches ? matches.length : 0;
 }
 
+function collectEntryLearnings(entry: string): string[] {
+	const lines = entry.split("\n");
+	const learnings: string[] = [];
+	let inLearningsSection = false;
+
+	for (const line of lines) {
+		if (line.startsWith("- Learnings:")) {
+			inLearningsSection = true;
+			continue;
+		}
+
+		if (inLearningsSection && line.startsWith("- ")) {
+			break;
+		}
+
+		if (inLearningsSection && line.startsWith("  - ")) {
+			const learning = line.slice(4).trim();
+			if (learning) {
+				learnings.push(learning);
+			}
+		}
+	}
+
+	return learnings;
+}
+
 /**
  * Consolidate patterns every CONSOLIDATE_EVERY iterations
  */
@@ -250,13 +276,18 @@ async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> 
 	const path = getProgressMdPath(workDir);
 	const raw = readFileSync(path, "utf-8");
 
-	// Extract all learnings bullets across all entries
+	// Extract only `- Learnings:` bullets from each entry.
 	const allLearnings: string[] = [];
-	const learningMatches = raw.matchAll(/^ {2}- (.+)$/gm);
-	for (const match of learningMatches) {
-		const line = match[1].trim();
-		if (line && !allLearnings.includes(line) && allLearnings.length < 20) {
-			allLearnings.push(line);
+	const entries = raw
+		.split(/^## \[/m)
+		.slice(1)
+		.map((entry) => `## [${entry.trim()}`);
+
+	for (const entry of entries) {
+		for (const learning of collectEntryLearnings(entry)) {
+			if (!allLearnings.includes(learning) && allLearnings.length < 20) {
+				allLearnings.push(learning);
+			}
 		}
 	}
 
