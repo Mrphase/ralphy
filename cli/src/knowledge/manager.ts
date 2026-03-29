@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getRalphyDir } from "../config/loader.ts";
+import { logDebug } from "../ui/logger.ts";
 import {
 	DEFAULT_KNOWLEDGE_OPTIONS,
 	type KnowledgeContext,
@@ -202,8 +203,8 @@ export async function appendLearning(
 
 	try {
 		await appendFile(path, lines.join("\n"), "utf-8");
-	} catch {
-		// Ignore write errors
+	} catch (err) {
+		logDebug(`Knowledge write failed: ${err}`);
 	}
 
 	// Periodically consolidate patterns
@@ -312,8 +313,8 @@ async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> 
 
 	try {
 		writeFileSync(path, updated, "utf-8");
-	} catch {
-		// Ignore write errors
+	} catch (err) {
+		logDebug(`Knowledge write failed: ${err}`);
 	}
 }
 
