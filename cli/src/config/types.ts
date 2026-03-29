@@ -63,6 +63,10 @@ export type RalphyConfig = z.infer<typeof RalphyConfigSchema>;
  * Runtime options parsed from CLI args
  */
 export interface RuntimeOptions {
+	/** Enable/disable knowledge system */
+	knowledge: boolean;
+	/** Number of recent learnings to inject into prompts */
+	knowledgeContext: number;
 	/** Skip running tests */
 	skipTests: boolean;
 	/** Skip running lint */
@@ -142,4 +146,6 @@ export const DEFAULT_OPTIONS: RuntimeOptions = {
 	githubLabel: "",
 	autoCommit: true,
 	browserEnabled: "auto",
+	knowledge: true,
+	knowledgeContext: 10,
 };

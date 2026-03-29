@@ -112,6 +112,8 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 
 	// Run tasks
 	let result: ExecutionResult;
+	const knowledgeOptions = { enabled: options.knowledge, contextWindow: options.knowledgeContext };
+
 	if (options.parallel) {
 		result = await runParallel({
 			engine,
@@ -139,6 +141,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			skipMerge: options.skipMerge,
 			engineArgs: options.engineArgs,
 			syncIssue: options.syncIssue,
+			knowledge: knowledgeOptions,
 		});
 	} else {
 		result = await runSequential({
@@ -163,6 +166,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			skipMerge: options.skipMerge,
 			engineArgs: options.engineArgs,
 			syncIssue: options.syncIssue,
+			knowledge: knowledgeOptions,
 		});
 	}
 

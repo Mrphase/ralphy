@@ -61,6 +61,7 @@ async function runAgentInWorktree(
 	browserEnabled: "auto" | "true" | "false",
 	modelOverride?: string,
 	engineArgs?: string[],
+	knowledge?: import("../knowledge/index.ts").KnowledgeOptions,
 ): Promise<ParallelAgentResult> {
 	let worktreeDir = "";
 	let branchName = "";
@@ -108,6 +109,7 @@ async function runAgentInWorktree(
 			skipTests,
 			skipLint,
 			browserEnabled,
+			knowledge,
 		});
 
 		// Execute with retry
@@ -155,6 +157,7 @@ async function runAgentInSandbox(
 	browserEnabled: "auto" | "true" | "false",
 	modelOverride?: string,
 	engineArgs?: string[],
+	knowledge?: import("../knowledge/index.ts").KnowledgeOptions,
 ): Promise<ParallelAgentResult> {
 	const uniqueSuffix = Math.random().toString(36).substring(2, 8);
 	const sandboxDir = join(sandboxBase, `agent-${agentNum}-${uniqueSuffix}`);
@@ -202,6 +205,7 @@ async function runAgentInSandbox(
 			skipLint,
 			browserEnabled,
 			allowCommit: false,
+			knowledge,
 		});
 
 		// Execute with retry
@@ -267,6 +271,7 @@ export async function runParallel(
 		useSandbox = false,
 		engineArgs,
 		syncIssue,
+		knowledge,
 	} = options;
 
 	const shouldFallbackToSandbox = (error: string | undefined): boolean => {
@@ -399,6 +404,7 @@ export async function runParallel(
 					browserEnabled,
 					modelOverride,
 					engineArgs,
+					knowledge,
 				);
 
 			if (effectiveUseSandbox) {
@@ -422,6 +428,7 @@ export async function runParallel(
 				browserEnabled,
 				modelOverride,
 				engineArgs,
+				knowledge,
 			).then((res) => {
 				if (shouldFallbackToSandbox(res.error)) {
 					logWarn(`Agent ${globalAgentNum}: Worktree unavailable, retrying in sandbox mode.`);

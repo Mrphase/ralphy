@@ -3,6 +3,8 @@ import type { AIEngine, AIResult } from "../engines/types.ts";
 import { createTaskBranch, returnToBaseBranch } from "../git/branch.ts";
 import { syncPrdToIssue } from "../git/issue-sync.ts";
 import { createPullRequest } from "../git/pr.ts";
+import type { KnowledgeOptions } from "../knowledge/index.ts";
+import { appendLearning, extractLearning } from "../knowledge/manager.ts";
 import type { Task, TaskSource } from "../tasks/types.ts";
 import { logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
@@ -40,6 +42,8 @@ export interface ExecutionOptions {
 	engineArgs?: string[];
 	/** GitHub issue number to sync PRD with on each iteration */
 	syncIssue?: number;
+	/** Knowledge system options */
+	knowledge?: KnowledgeOptions;
 }
 
 export interface ExecutionResult {
@@ -73,6 +77,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 		modelOverride,
 		engineArgs,
 		syncIssue,
+		knowledge,
 	} = options;
 
 	const result: ExecutionResult = {
@@ -123,6 +128,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 			skipTests,
 			skipLint,
 			prdFile: options.prdFile,
+			knowledge,
 		});
 
 		// Execute with spinner
@@ -180,6 +186,18 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 					logTaskProgress(task.title, "completed", workDir);
 					result.tasksCompleted++;
 
+					// Extract and store knowledge learnings
+					if (knowledge?.enabled !== false) {
+						const learning = extractLearning(
+							task.title,
+							engine.name,
+							"completed",
+							aiResult.response,
+							[],
+						);
+						await appendLearning(learning, workDir);
+					}
+
 					// Sync PRD to GitHub issue if configured
 					if (syncIssue && options.prdFile) {
 						await syncPrdToIssue(options.prdFile, syncIssue, workDir);
@@ -236,6 +254,18 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 						// Mark task complete so we don't retry it infinitely
 						await taskSource.markComplete(task.id);
 						clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
+						// Extract and store failure learnings
+						if (knowledge?.enabled !== false) {
+							const learning = extractLearning(
+								task.title,
+								engine.name,
+								"failed",
+								aiResult.response,
+								[],
+								errMsg,
+							);
+							await appendLearning(learning, workDir);
+						}
 					}
 				}
 			} catch (error) {
@@ -271,6 +301,11 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 					// Mark task complete so we don't retry it infinitely
 					await taskSource.markComplete(task.id);
 					clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
+					// Extract and store failure learnings
+					if (knowledge?.enabled !== false) {
+						const learning = extractLearning(task.title, engine.name, "failed", "", [], errorMsg);
+						await appendLearning(learning, workDir);
+					}
 				}
 			}
 		}

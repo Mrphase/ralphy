@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
+import {
+	type KnowledgeOptions,
+	formatKnowledgeForPrompt,
+	readKnowledgeContext,
+} from "../knowledge/index.ts";
 import { getBrowserInstructions, isBrowserAvailable } from "./browser.ts";
 
 interface PromptOptions {
@@ -11,6 +16,8 @@ interface PromptOptions {
 	skipTests?: boolean;
 	skipLint?: boolean;
 	prdFile?: string;
+	/** Knowledge system options */
+	knowledge?: KnowledgeOptions;
 }
 
 /**
@@ -41,9 +48,20 @@ export function buildPrompt(options: PromptOptions): string {
 		skipTests = false,
 		skipLint = false,
 		prdFile,
+		knowledge,
 	} = options;
 
 	const parts: string[] = [];
+
+	// Inject knowledge context (AGENTS.md + recent learnings from progress.md)
+	if (knowledge?.enabled !== false) {
+		const knowledgeOpts = knowledge ?? { enabled: true, contextWindow: 10 };
+		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
+		const knowledgeSection = formatKnowledgeForPrompt(ctx);
+		if (knowledgeSection) {
+			parts.push(knowledgeSection);
+		}
+	}
 
 	// Add project context if available
 	const context = loadProjectContext(workDir);
@@ -143,6 +161,8 @@ interface ParallelPromptOptions {
 	skipLint?: boolean;
 	browserEnabled?: "auto" | "true" | "false";
 	allowCommit?: boolean;
+	/** Knowledge system options */
+	knowledge?: KnowledgeOptions;
 }
 
 /**
@@ -158,7 +178,19 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 		skipLint = false,
 		browserEnabled = "auto",
 		allowCommit = true,
+		knowledge,
 	} = options;
+
+	// Inject knowledge context at the top
+	let knowledgeSection = "";
+	if (knowledge?.enabled !== false) {
+		const knowledgeOpts = knowledge ?? { enabled: true, contextWindow: 10 };
+		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
+		const formatted = formatKnowledgeForPrompt(ctx);
+		if (formatted) {
+			knowledgeSection = `\n\n${formatted}`;
+		}
+	}
 
 	// Parallel execution typically runs in a worktree
 	const skillRoots = detectAgentSkills(workDir);
@@ -225,7 +257,7 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 		instructions.push(`${step}. Do NOT run git commit; changes will be collected automatically`);
 	}
 
-	return `You are working on a specific task. Focus ONLY on this task:
+	return `You are working on a specific task. Focus ONLY on this task:${knowledgeSection}
 
 TASK: ${task}${rulesSection}${boundariesSection}${browserSection}${skillsSection}
 

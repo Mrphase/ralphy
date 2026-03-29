@@ -1,0 +1,356 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFile } from "node:fs/promises";
+import { join } from "node:path";
+import { getRalphyDir } from "../config/loader.ts";
+import type { KnowledgeContext, KnowledgeOptions, TaskLearning } from "./types.ts";
+
+export const PROGRESS_MD_FILE = "progress.md";
+export const AGENTS_MD_FILE = "AGENTS.md";
+
+/**
+ * Consolidate patterns every N iterations
+ */
+const CONSOLIDATE_EVERY = 5;
+
+/**
+ * Get the full path to progress.md
+ */
+export function getProgressMdPath(workDir = process.cwd()): string {
+	return join(getRalphyDir(workDir), PROGRESS_MD_FILE);
+}
+
+/**
+ * Get the full path to AGENTS.md
+ */
+export function getAgentsMdPath(workDir = process.cwd()): string {
+	return join(getRalphyDir(workDir), AGENTS_MD_FILE);
+}
+
+/**
+ * Create initial progress.md
+ */
+export function initProgressMd(workDir = process.cwd()): void {
+	const path = getProgressMdPath(workDir);
+	if (existsSync(path)) return;
+
+	const content = `# Codebase Patterns (Auto-Updated Summary)
+
+_No patterns recorded yet. Patterns will be consolidated after ${CONSOLIDATE_EVERY} iterations._
+
+---
+
+# Iteration Learnings
+
+`;
+	writeFileSync(path, content, "utf-8");
+}
+
+/**
+ * Create initial AGENTS.md using detected project info
+ */
+export function initAgentsMd(
+	workDir = process.cwd(),
+	projectInfo?: {
+		name?: string;
+		language?: string;
+		framework?: string;
+		testCmd?: string;
+		lintCmd?: string;
+		buildCmd?: string;
+	},
+): void {
+	const path = getAgentsMdPath(workDir);
+	if (existsSync(path)) return;
+
+	const name = projectInfo?.name || "";
+	const language = projectInfo?.language || "";
+	const framework = projectInfo?.framework || "";
+	const testCmd = projectInfo?.testCmd || "";
+	const lintCmd = projectInfo?.lintCmd || "";
+	const buildCmd = projectInfo?.buildCmd || "";
+
+	const overview = [
+		name,
+		language && `Language: ${language}`,
+		framework && `Framework: ${framework}`,
+	]
+		.filter(Boolean)
+		.join(" | ");
+
+	const commandLines = [
+		testCmd && `- Test: \`${testCmd}\``,
+		lintCmd && `- Lint: \`${lintCmd}\``,
+		buildCmd && `- Build: \`${buildCmd}\``,
+	]
+		.filter(Boolean)
+		.join("\n");
+
+	const content = `# Agent Instructions
+
+## Project Overview
+
+${overview || "_Fill in project overview here._"}
+
+## Coding Conventions
+
+_Document project-specific coding conventions here. For example:_
+- _Follow existing patterns in the codebase_
+- _Keep changes focused and minimal_
+
+## Known Pitfalls
+
+_Document known issues and gotchas discovered during development._
+
+## Testing Notes
+
+${commandLines || "_Document how to run tests and any test-specific requirements._"}
+
+## Dependencies & Environment
+
+_Document required environment variables, external dependencies, and setup notes._
+`;
+
+	writeFileSync(path, content, "utf-8");
+}
+
+/**
+ * Read the knowledge context to inject into a prompt
+ */
+export function readKnowledgeContext(
+	options: KnowledgeOptions,
+	workDir = process.cwd(),
+): KnowledgeContext {
+	if (!options.enabled) {
+		return { agentsContent: "", recentLearnings: "", patternsSection: "" };
+	}
+
+	const agentsPath = getAgentsMdPath(workDir);
+	const progressPath = getProgressMdPath(workDir);
+
+	const agentsContent = existsSync(agentsPath) ? readFileSync(agentsPath, "utf-8").trim() : "";
+
+	let patternsSection = "";
+	let recentLearnings = "";
+
+	if (existsSync(progressPath)) {
+		const raw = readFileSync(progressPath, "utf-8");
+		const parts = raw.split(/^---$/m);
+
+		// First section before the separator is the patterns block
+		if (parts.length >= 1) {
+			const patternBlock = parts[0].trim();
+			// Only include if it has actual content beyond the placeholder
+			if (!patternBlock.includes("No patterns recorded yet")) {
+				patternsSection = patternBlock;
+			}
+		}
+
+		// Extract the last N learning entries
+		const learningsSection = parts.slice(1).join("---");
+		const entries = learningsSection
+			.split(/^## \[/m)
+			.filter((e) => e.trim().length > 0)
+			.map((e) => `## [${e.trim()}`);
+
+		const recent = entries.slice(-options.contextWindow);
+		if (recent.length > 0) {
+			recentLearnings = recent.join("\n\n");
+		}
+	}
+
+	return { agentsContent, recentLearnings, patternsSection };
+}
+
+/**
+ * Append a learning entry to progress.md
+ */
+export async function appendLearning(
+	learning: TaskLearning,
+	workDir = process.cwd(),
+): Promise<void> {
+	const path = getProgressMdPath(workDir);
+	if (!existsSync(path)) return;
+
+	const lines: string[] = [
+		`\n## [${learning.timestamp}] Task: "${learning.task}"`,
+		`- Engine: ${learning.engine}`,
+		`- Status: ${learning.status}`,
+	];
+
+	if (learning.learnings.length > 0) {
+		lines.push("- Learnings:");
+		for (const l of learning.learnings) {
+			lines.push(`  - ${l}`);
+		}
+	}
+
+	if (learning.filesModified.length > 0) {
+		lines.push(`- Files Modified: ${learning.filesModified.join(", ")}`);
+	}
+
+	if (learning.issuesEncountered.length > 0) {
+		lines.push("- Issues Encountered:");
+		for (const issue of learning.issuesEncountered) {
+			lines.push(`  - ${issue}`);
+		}
+	}
+
+	lines.push("");
+
+	try {
+		await appendFile(path, lines.join("\n"), "utf-8");
+	} catch {
+		// Ignore write errors
+	}
+
+	// Periodically consolidate patterns
+	await maybeConsolidatePatterns(workDir);
+}
+
+/**
+ * Extract a basic learning entry from task output and git diff
+ */
+export function extractLearning(
+	task: string,
+	engine: string,
+	status: "completed" | "failed",
+	agentOutput: string,
+	filesModified: string[],
+	errorMessage?: string,
+): TaskLearning {
+	const learnings: string[] = [];
+	const issuesEncountered: string[] = [];
+
+	if (status === "failed" && errorMessage) {
+		issuesEncountered.push(errorMessage.slice(0, 200));
+	}
+
+	// Extract hints from agent output (look for key phrases)
+	if (agentOutput) {
+		const outputLines = agentOutput.split("\n");
+		for (const line of outputLines) {
+			const trimmed = line.trim();
+			if (trimmed.length < 10 || trimmed.length > 200) continue;
+
+			// Heuristic: lines that mention patterns, errors, discovered, noted, found
+			if (
+				/\b(pattern|discovered|found|note|warning|error|install|require|depend|config|env|variable)\b/i.test(
+					trimmed,
+				) &&
+				!trimmed.startsWith("#") &&
+				learnings.length < 5
+			) {
+				learnings.push(trimmed);
+			}
+		}
+	}
+
+	return {
+		timestamp: new Date().toISOString(),
+		task,
+		engine,
+		status,
+		learnings,
+		filesModified: filesModified.slice(0, 20),
+		issuesEncountered,
+	};
+}
+
+/**
+ * Count the number of learning entries in progress.md
+ */
+function countLearningEntries(workDir = process.cwd()): number {
+	const path = getProgressMdPath(workDir);
+	if (!existsSync(path)) return 0;
+
+	const content = readFileSync(path, "utf-8");
+	const matches = content.match(/^## \[/gm);
+	return matches ? matches.length : 0;
+}
+
+/**
+ * Consolidate patterns every CONSOLIDATE_EVERY iterations
+ */
+async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> {
+	const count = countLearningEntries(workDir);
+	if (count === 0 || count % CONSOLIDATE_EVERY !== 0) return;
+
+	const path = getProgressMdPath(workDir);
+	const raw = readFileSync(path, "utf-8");
+
+	// Extract all learnings bullets across all entries
+	const allLearnings: string[] = [];
+	const learningMatches = raw.matchAll(/^ {2}- (.+)$/gm);
+	for (const match of learningMatches) {
+		const line = match[1].trim();
+		if (line && !allLearnings.includes(line) && allLearnings.length < 20) {
+			allLearnings.push(line);
+		}
+	}
+
+	if (allLearnings.length === 0) return;
+
+	const patternLines = allLearnings.map((l) => `- ${l}`).join("\n");
+	const newPatternsSection = `# Codebase Patterns (Auto-Updated Summary)\n\n${patternLines}\n`;
+
+	// Replace the section before the first "---" separator
+	const separatorIndex = raw.indexOf("\n---\n");
+	if (separatorIndex === -1) return;
+
+	const afterSeparator = raw.slice(separatorIndex);
+	const updated = `${newPatternsSection}${afterSeparator}`;
+
+	try {
+		writeFileSync(path, updated, "utf-8");
+	} catch {
+		// Ignore write errors
+	}
+}
+
+/**
+ * Format knowledge context as a prompt section
+ */
+export function formatKnowledgeForPrompt(context: KnowledgeContext): string {
+	const parts: string[] = [];
+
+	if (context.agentsContent) {
+		parts.push(`## Agent Instructions\n${context.agentsContent}`);
+	}
+
+	if (context.patternsSection) {
+		parts.push(`## Known Codebase Patterns\n${context.patternsSection}`);
+	}
+
+	if (context.recentLearnings) {
+		parts.push(`## Recent Task Learnings\n${context.recentLearnings}`);
+	}
+
+	return parts.join("\n\n");
+}
+
+/**
+ * Get a summary of current knowledge state (for `ralphy knowledge show`)
+ */
+export function getKnowledgeSummary(workDir = process.cwd()): string {
+	const agentsPath = getAgentsMdPath(workDir);
+	const progressPath = getProgressMdPath(workDir);
+
+	const lines: string[] = ["## Knowledge State\n"];
+
+	if (existsSync(agentsPath)) {
+		const content = readFileSync(agentsPath, "utf-8");
+		const lineCount = content.split("\n").length;
+		lines.push(`**AGENTS.md**: ${lineCount} lines`);
+	} else {
+		lines.push("**AGENTS.md**: not found");
+	}
+
+	if (existsSync(progressPath)) {
+		const count = countLearningEntries(workDir);
+		lines.push(`**progress.md**: ${count} learning entries`);
+	} else {
+		lines.push("**progress.md**: not found");
+	}
+
+	return lines.join("\n");
+}

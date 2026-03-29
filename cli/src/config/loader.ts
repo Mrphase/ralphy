@@ -6,6 +6,8 @@ import { type RalphyConfig, RalphyConfigSchema } from "./types.ts";
 export const RALPHY_DIR = ".ralphy";
 export const CONFIG_FILE = "config.yaml";
 export const PROGRESS_FILE = "progress.txt";
+export const PROGRESS_MD_FILE = "progress.md";
+export const AGENTS_MD_FILE = "AGENTS.md";
 
 /**
  * Get the full path to the ralphy directory

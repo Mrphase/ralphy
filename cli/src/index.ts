@@ -2,6 +2,7 @@
 import { parseArgs } from "./cli/args.ts";
 import { addRule, showConfig } from "./cli/commands/config.ts";
 import { runInit } from "./cli/commands/init.ts";
+import { runKnowledgeReset, runKnowledgeShow } from "./cli/commands/knowledge.ts";
 import { runLoop } from "./cli/commands/run.ts";
 import { runTask } from "./cli/commands/task.ts";
 import { flushAllProgressWrites } from "./config/writer.ts";
@@ -15,6 +16,7 @@ async function main(): Promise<void> {
 			initMode,
 			showConfig: showConfigMode,
 			addRule: rule,
+			knowledgeCommand,
 		} = parseArgs(process.argv);
 
 		// Handle --init
@@ -32,6 +34,16 @@ async function main(): Promise<void> {
 		// Handle --add-rule
 		if (rule) {
 			await addRule(rule);
+			return;
+		}
+
+		// Handle `ralphy knowledge show|reset`
+		if (knowledgeCommand) {
+			if (knowledgeCommand === "reset") {
+				runKnowledgeReset();
+			} else {
+				runKnowledgeShow();
+			}
 			return;
 		}
 

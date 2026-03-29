@@ -6,6 +6,7 @@ import type { AIEngineName } from "../../engines/types.ts";
 import { isBrowserAvailable } from "../../execution/browser.ts";
 import { buildPrompt } from "../../execution/prompt.ts";
 import { isRetryableError, withRetry } from "../../execution/retry.ts";
+import { appendLearning, extractLearning } from "../../knowledge/manager.ts";
 import { sendNotifications } from "../../notifications/webhook.ts";
 import { formatTokens, logError, logInfo, setVerbose } from "../../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../../ui/notify.ts";
@@ -46,6 +47,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 		browserEnabled: options.browserEnabled,
 		skipTests: options.skipTests,
 		skipLint: options.skipLint,
+		knowledge: { enabled: options.knowledge, contextWindow: options.knowledgeContext },
 	});
 
 	// Build active settings for display
@@ -107,6 +109,13 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 			spinner.success(`Done ${tokens}`);
 
 			logTaskProgress(task, "completed", workDir);
+
+			// Extract and store knowledge learnings
+			if (options.knowledge !== false) {
+				const learning = extractLearning(task, engine.name, "completed", result.response, []);
+				await appendLearning(learning, workDir);
+			}
+
 			await sendNotifications(config, "completed", {
 				tasksCompleted: 1,
 				tasksFailed: 0,
