@@ -112,7 +112,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 
 			// Extract and store knowledge learnings
 			if (options.knowledge !== false) {
-				const learning = extractLearning(task, engine.name, "completed", result.response, []);
+				const learning = extractLearning(task, engine.name, "completed");
 				await appendLearning(learning, workDir);
 			}
 

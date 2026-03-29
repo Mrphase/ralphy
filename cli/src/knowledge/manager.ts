@@ -184,10 +184,6 @@ export async function appendLearning(
 		}
 	}
 
-	if (learning.filesModified.length > 0) {
-		lines.push(`- Files Modified: ${learning.filesModified.join(", ")}`);
-	}
-
 	if (learning.issuesEncountered.length > 0) {
 		lines.push("- Issues Encountered:");
 		for (const issue of learning.issuesEncountered) {
@@ -214,35 +210,12 @@ export function extractLearning(
 	task: string,
 	engine: string,
 	status: "completed" | "failed",
-	agentOutput: string,
-	filesModified: string[],
 	errorMessage?: string,
 ): TaskLearning {
-	const learnings: string[] = [];
 	const issuesEncountered: string[] = [];
 
 	if (status === "failed" && errorMessage) {
 		issuesEncountered.push(errorMessage.slice(0, 200));
-	}
-
-	// Extract hints from agent output (look for key phrases)
-	if (agentOutput) {
-		const outputLines = agentOutput.split("\n");
-		for (const line of outputLines) {
-			const trimmed = line.trim();
-			if (trimmed.length < 10 || trimmed.length > 200) continue;
-
-			// Heuristic: lines that mention patterns, errors, discovered, noted, found
-			if (
-				/\b(pattern|discovered|found|note|warning|error|install|require|depend|config|env|variable)\b/i.test(
-					trimmed,
-				) &&
-				!trimmed.startsWith("#") &&
-				learnings.length < 5
-			) {
-				learnings.push(trimmed);
-			}
-		}
 	}
 
 	return {
@@ -250,8 +223,7 @@ export function extractLearning(
 		task,
 		engine,
 		status,
-		learnings,
-		filesModified: filesModified.slice(0, 20),
+		learnings: [],
 		issuesEncountered,
 	};
 }

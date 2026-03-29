@@ -7,7 +7,6 @@ export interface TaskLearning {
 	engine: string;
 	status: "completed" | "failed";
 	learnings: string[];
-	filesModified: string[];
 	issuesEncountered: string[];
 }
 

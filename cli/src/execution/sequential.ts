@@ -188,13 +188,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 
 					// Extract and store knowledge learnings
 					if (knowledge?.enabled !== false) {
-						const learning = extractLearning(
-							task.title,
-							engine.name,
-							"completed",
-							aiResult.response,
-							[],
-						);
+						const learning = extractLearning(task.title, engine.name, "completed");
 						await appendLearning(learning, workDir);
 					}
 
@@ -256,14 +250,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 						clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
 						// Extract and store failure learnings
 						if (knowledge?.enabled !== false) {
-							const learning = extractLearning(
-								task.title,
-								engine.name,
-								"failed",
-								aiResult.response,
-								[],
-								errMsg,
-							);
+							const learning = extractLearning(task.title, engine.name, "failed", errMsg);
 							await appendLearning(learning, workDir);
 						}
 					}
@@ -303,7 +290,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 					clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
 					// Extract and store failure learnings
 					if (knowledge?.enabled !== false) {
-						const learning = extractLearning(task.title, engine.name, "failed", "", [], errorMsg);
+						const learning = extractLearning(task.title, engine.name, "failed", errorMsg);
 						await appendLearning(learning, workDir);
 					}
 				}

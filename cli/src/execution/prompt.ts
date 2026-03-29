@@ -142,6 +142,10 @@ export function buildPrompt(options: PromptOptions): string {
 
 	instructions.push(`${step}. Ensure the code works correctly`);
 	step++;
+	instructions.push(
+		`${step}. After finishing, append a learning entry to .ralphy/progress.md at the end using this format: ## [ISO_TIMESTAMP] Task: "${task}" followed by a - Learnings: section with bullet points summarizing what you discovered`,
+	);
+	step++;
 
 	if (autoCommit) {
 		instructions.push(`${step}. Commit your changes with a descriptive message`);
@@ -250,6 +254,10 @@ export function buildParallelPrompt(options: ParallelPromptOptions): string {
 	}
 
 	instructions.push(`${step}. Update ${progressFile} with what you did`);
+	step++;
+	instructions.push(
+		`${step}. After finishing, append a learning entry to .ralphy/progress.md at the end using this format: ## [ISO_TIMESTAMP] Task: "${task}" followed by a - Learnings: section with bullet points summarizing what you discovered`,
+	);
 	step++;
 	if (allowCommit) {
 		instructions.push(`${step}. Commit your changes with a descriptive message`);
