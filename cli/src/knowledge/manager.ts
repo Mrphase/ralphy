@@ -17,6 +17,7 @@ export const AGENTS_MD_FILE = "AGENTS.md";
  * Consolidate patterns every N iterations
  */
 const CONSOLIDATE_EVERY = 5;
+const MAX_CONSOLIDATED_PATTERNS = 20;
 
 /**
  * Get the full path to progress.md
@@ -293,7 +294,10 @@ async function maybeConsolidatePatterns(workDir = process.cwd()): Promise<void> 
 
 	for (const entry of entries) {
 		for (const learning of collectEntryLearnings(entry)) {
-			if (!allLearnings.includes(learning) && allLearnings.length < 20) {
+			if (
+				!allLearnings.includes(learning) &&
+				allLearnings.length < MAX_CONSOLIDATED_PATTERNS
+			) {
 				allLearnings.push(learning);
 			}
 		}
