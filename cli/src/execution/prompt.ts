@@ -41,7 +41,7 @@ function getKnowledgeWriteInstruction(task: string): string {
 	return [
 		`Append a learning entry to .ralphy/progress.md after finishing.`,
 		`Use this format exactly: ## [ISO_TIMESTAMP] Task: "${task}"`,
-		`Under it, add a - Learnings: section with bullet points summarizing what you discovered.`,
+		"Under it, add a - Learnings: section with bullet points summarizing what you discovered.",
 	].join(" ");
 }
 
