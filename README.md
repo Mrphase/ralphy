@@ -204,6 +204,19 @@ ralphy --cursor "fix bug" -- --custom-arg value
 
 Everything after `--` is passed directly to the engine CLI without interpretation.
 
+### Codex Usage-Limit Auto-Resume
+
+When you run with `--codex`, ralphy now auto-resumes real Codex usage-limit errors by default:
+
+```bash
+ralphy --codex --usage-limit-wait-hours 6 "fix the auth bug"
+ralphy --codex --no-usage-limit-resume "fix the auth bug"
+```
+
+- Keeps the normal seconds-level `--retry-delay` retry loop for transient failures
+- If Codex says `try again at ...`, ralphy waits until that time plus a 2 minute buffer, then continues automatically
+- If Codex does not provide a retry time, ralphy falls back to waiting `5.5` hours
+
 ## Task Sources
 
 **Markdown file** (default):
@@ -372,7 +385,7 @@ ralphy --parallel --sandbox
 
 **Parallel execution reliability:**
 - If worktree operations fail (e.g., nested worktree repos), ralphy falls back to sandbox mode automatically
-- Retryable rate-limit or quota errors are detected and deferred for later retry
+- Codex usage-limit errors can pause the batch and automatically resume later
 - Local changes are stashed before the merge phase and restored after
 - Agents should not modify PRD files, `.ralphy/progress.txt`, `.ralphy-worktrees`, or `.ralphy-sandboxes`
 
@@ -406,6 +419,8 @@ ralphy --parallel --sandbox
 | `--max-iterations N` | stop after N tasks |
 | `--max-retries N` | retries per task (default: 3) |
 | `--retry-delay N` | seconds between retries |
+| `--usage-limit-wait-hours N` | fallback hours to wait before retrying a Codex usage limit (default: 5.5) |
+| `--no-usage-limit-resume` | disable automatic wait-and-resume for Codex usage limits |
 | `--dry-run` | preview only |
 | `--browser` | enable browser automation |
 | `--no-browser` | disable browser automation |
@@ -451,6 +466,11 @@ When an engine exits non-zero, ralphy includes the last lines of CLI output in t
 ---
 
 ## Changelog
+
+### Unreleased
+- Codex usage-limit auto-resume: wait until the provider retry time when available, otherwise fall back to `5.5` hours
+- new flags: `--usage-limit-wait-hours` and `--no-usage-limit-resume`
+- Codex engine parsing: preserve multiline usage-limit error messages for retry handling
 
 ### v4.7.2
 - **Improved auth error detection**: simplified `extractAuthenticationError` function with better edge case handling (e.g., JSON dumps during login)

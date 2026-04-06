@@ -83,6 +83,10 @@ export interface RuntimeOptions {
 	maxRetries: number;
 	/** Delay between retries in seconds */
 	retryDelay: number;
+	/** Automatically wait and resume after a Codex usage-limit failure */
+	usageLimitResume: boolean;
+	/** Fallback hours to wait when Codex does not provide a retry time */
+	usageLimitWaitHours: number;
 	/** Verbose output */
 	verbose: boolean;
 	/** Create branch per task */
@@ -134,6 +138,8 @@ export const DEFAULT_OPTIONS: RuntimeOptions = {
 	maxIterations: 0,
 	maxRetries: 3,
 	retryDelay: 5,
+	usageLimitResume: true,
+	usageLimitWaitHours: 5.5,
 	verbose: false,
 	branchPerTask: false,
 	baseBranch: "",

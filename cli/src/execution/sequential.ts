@@ -10,7 +10,8 @@ import { notifyTaskComplete, notifyTaskFailed } from "../ui/notify.ts";
 import { ProgressSpinner } from "../ui/spinner.ts";
 import { clearDeferredTask, recordDeferredTask } from "./deferred.ts";
 import { buildPrompt } from "./prompt.ts";
-import { isFatalError, isRetryableError, sleep, withRetry } from "./retry.ts";
+import { isFatalError, isRetryableError, withRetry } from "./retry.ts";
+import { UsageLimitExhaustedError, withCodexUsageLimitResume } from "./usage-limit.ts";
 
 export interface ExecutionOptions {
 	engine: AIEngine;
@@ -22,6 +23,8 @@ export interface ExecutionOptions {
 	maxIterations: number;
 	maxRetries: number;
 	retryDelay: number;
+	usageLimitResume: boolean;
+	usageLimitWaitHours: number;
 	branchPerTask: boolean;
 	baseBranch: string;
 	createPr: boolean;
@@ -138,39 +141,56 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 			spinner.success("(dry run) Skipped");
 		} else {
 			try {
-				aiResult = await withRetry(
-					async () => {
-						spinner.updateStep("Working");
+				aiResult = await withCodexUsageLimitResume(
+					() =>
+						withRetry(
+							async () => {
+								spinner.updateStep("Working");
 
-						// Use streaming if available
-						const engineOptions = {
-							...(modelOverride && { modelOverride }),
-							...(engineArgs && engineArgs.length > 0 && { engineArgs }),
-						};
-						if (engine.executeStreaming) {
-							return await engine.executeStreaming(
-								prompt,
-								workDir,
-								(step) => {
-									spinner.updateStep(step);
+								// Use streaming if available
+								const engineOptions = {
+									...(modelOverride && { modelOverride }),
+									...(engineArgs && engineArgs.length > 0 && { engineArgs }),
+								};
+								if (engine.executeStreaming) {
+									return await engine.executeStreaming(
+										prompt,
+										workDir,
+										(step) => {
+											spinner.updateStep(step);
+										},
+										engineOptions,
+									);
+								}
+
+								const res = await engine.execute(prompt, workDir, engineOptions);
+
+								if (!res.success && res.error && isRetryableError(res.error)) {
+									throw new Error(res.error);
+								}
+
+								return res;
+							},
+							{
+								maxRetries,
+								retryDelay,
+								onRetry: (attempt) => {
+									spinner.updateStep(`Retry ${attempt}`);
 								},
-								engineOptions,
-							);
-						}
-
-						const res = await engine.execute(prompt, workDir, engineOptions);
-
-						if (!res.success && res.error && isRetryableError(res.error)) {
-							throw new Error(res.error);
-						}
-
-						return res;
-					},
+							},
+						),
 					{
-						maxRetries,
-						retryDelay,
-						onRetry: (attempt) => {
-							spinner.updateStep(`Retry ${attempt}`);
+						enabled: options.usageLimitResume,
+						engineName: engine.name,
+						fallbackHours: options.usageLimitWaitHours,
+						maxDeferrals: maxRetries,
+						recordDeferral: ({ error, resumeAt }) =>
+							recordDeferredTask(taskSource.type, task, workDir, options.prdFile, {
+								reason: error,
+								resumeAt: resumeAt.toISOString(),
+							}),
+						onBeforeWait: () => {
+							spinner.updateStep("Waiting for usage reset");
 						},
 					},
 				);
@@ -244,6 +264,19 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 					}
 				}
 			} catch (error) {
+				if (error instanceof UsageLimitExhaustedError) {
+					spinner.error(error.message);
+					logError(
+						`Task "${task.title}" failed after ${error.deferrals} usage-limit deferrals: ${error.message}`,
+					);
+					logTaskProgress(task.title, "failed", workDir);
+					result.tasksFailed++;
+					notifyTaskFailed(task.title, error.message);
+					await taskSource.markComplete(task.id);
+					clearDeferredTask(taskSource.type, task, workDir, options.prdFile);
+					continue;
+				}
+
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				if (isRetryableError(errorMsg)) {
 					const deferrals = recordDeferredTask(taskSource.type, task, workDir, options.prdFile);

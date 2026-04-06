@@ -4,8 +4,13 @@ import { logTaskProgress } from "../../config/writer.ts";
 import { createEngine, isEngineAvailable } from "../../engines/index.ts";
 import type { AIEngineName } from "../../engines/types.ts";
 import { isBrowserAvailable } from "../../execution/browser.ts";
+import { clearDeferredTask, recordDeferredTask } from "../../execution/deferred.ts";
 import { buildPrompt } from "../../execution/prompt.ts";
 import { isRetryableError, withRetry } from "../../execution/retry.ts";
+import {
+	UsageLimitExhaustedError,
+	withCodexUsageLimitResume,
+} from "../../execution/usage-limit.ts";
 import { sendNotifications } from "../../notifications/webhook.ts";
 import { formatTokens, logError, logInfo, setVerbose } from "../../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../../ui/notify.ts";
@@ -18,6 +23,11 @@ import { ProgressSpinner } from "../../ui/spinner.ts";
 export async function runTask(task: string, options: RuntimeOptions): Promise<void> {
 	const workDir = process.cwd();
 	const config = loadConfig(workDir);
+	const deferredTask = {
+		id: task,
+		title: task,
+		completed: false,
+	};
 
 	// Set verbose mode
 	setVerbose(options.verbose);
@@ -67,42 +77,59 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 	}
 
 	try {
-		const result = await withRetry(
-			async () => {
-				spinner.updateStep("Working");
+		const result = await withCodexUsageLimitResume(
+			() =>
+				withRetry(
+					async () => {
+						spinner.updateStep("Working");
 
-				// Build engine options
-				const engineOptions = {
-					...(options.modelOverride && { modelOverride: options.modelOverride }),
-					...(options.engineArgs &&
-						options.engineArgs.length > 0 && { engineArgs: options.engineArgs }),
-				};
+						// Build engine options
+						const engineOptions = {
+							...(options.modelOverride && { modelOverride: options.modelOverride }),
+							...(options.engineArgs &&
+								options.engineArgs.length > 0 && { engineArgs: options.engineArgs }),
+						};
 
-				// Use streaming if available
-				if (engine.executeStreaming) {
-					return await engine.executeStreaming(
-						prompt,
-						workDir,
-						(step) => {
-							spinner.updateStep(step);
+						// Use streaming if available
+						if (engine.executeStreaming) {
+							return await engine.executeStreaming(
+								prompt,
+								workDir,
+								(step) => {
+									spinner.updateStep(step);
+								},
+								engineOptions,
+							);
+						}
+
+						const res = await engine.execute(prompt, workDir, engineOptions);
+
+						if (!res.success && res.error && isRetryableError(res.error)) {
+							throw new Error(res.error);
+						}
+
+						return res;
+					},
+					{
+						maxRetries: options.maxRetries,
+						retryDelay: options.retryDelay,
+						onRetry: (attempt) => {
+							spinner.updateStep(`Retry ${attempt}`);
 						},
-						engineOptions,
-					);
-				}
-
-				const res = await engine.execute(prompt, workDir, engineOptions);
-
-				if (!res.success && res.error && isRetryableError(res.error)) {
-					throw new Error(res.error);
-				}
-
-				return res;
-			},
+					},
+				),
 			{
-				maxRetries: options.maxRetries,
-				retryDelay: options.retryDelay,
-				onRetry: (attempt) => {
-					spinner.updateStep(`Retry ${attempt}`);
+				enabled: options.usageLimitResume,
+				engineName: engine.name,
+				fallbackHours: options.usageLimitWaitHours,
+				maxDeferrals: options.maxRetries,
+				recordDeferral: ({ error, resumeAt }) =>
+					recordDeferredTask("single-task", deferredTask, workDir, undefined, {
+						reason: error,
+						resumeAt: resumeAt.toISOString(),
+					}),
+				onBeforeWait: () => {
+					spinner.updateStep("Waiting for usage reset");
 				},
 			},
 		);
@@ -111,6 +138,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 			const tokens = formatTokens(result.inputTokens, result.outputTokens);
 			spinner.success(`Done ${tokens}`);
 
+			clearDeferredTask("single-task", deferredTask, workDir);
 			logTaskProgress(task, "completed", workDir);
 
 			await sendNotifications(config, "completed", {
@@ -129,6 +157,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 			}
 		} else {
 			spinner.error(result.error || "Unknown error");
+			clearDeferredTask("single-task", deferredTask, workDir);
 			logTaskProgress(task, "failed", workDir);
 			await sendNotifications(config, "failed", {
 				tasksCompleted: 0,
@@ -138,6 +167,10 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 			process.exit(1);
 		}
 	} catch (error) {
+		if (error instanceof UsageLimitExhaustedError) {
+			clearDeferredTask("single-task", deferredTask, workDir);
+		}
+
 		const errorMsg = error instanceof Error ? error.message : String(error);
 		spinner.error(errorMsg);
 		logTaskProgress(task, "failed", workDir);

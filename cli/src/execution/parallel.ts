@@ -30,6 +30,13 @@ import { isRetryableError, withRetry } from "./retry.ts";
 import { commitSandboxChanges } from "./sandbox-git.ts";
 import { cleanupSandbox, createSandbox, getModifiedFiles, getSandboxBase } from "./sandbox.ts";
 import type { ExecutionOptions, ExecutionResult } from "./sequential.ts";
+import {
+	computeUsageLimitResumeAt,
+	formatUsageLimitResumeSource,
+	getUsageLimitResumeSource,
+	isCodexUsageLimitError,
+	waitForUsageLimitResume,
+} from "./usage-limit.ts";
 
 interface ParallelAgentResult {
 	task: Task;
@@ -273,6 +280,8 @@ export async function runParallel(
 		maxIterations,
 		maxRetries,
 		retryDelay,
+		usageLimitResume,
+		usageLimitWaitHours,
 		baseBranch,
 		maxParallel,
 		prdSource,
@@ -312,6 +321,9 @@ export async function runParallel(
 	if (effectiveUseSandbox) {
 		logInfo("Using lightweight sandbox mode (faster for large repos)");
 	}
+
+	const autoResumeCodexUsageLimit =
+		usageLimitResume && engine.name.trim().toLowerCase() === "codex";
 
 	// Save starting branch to restore after merge phase
 	const startingBranch = await getCurrentBranch(workDir);
@@ -460,6 +472,7 @@ export async function runParallel(
 
 		// Process results and collect worktrees for parallel cleanup
 		let sawRetryableFailure = false;
+		const usageLimitResumeTimes: Date[] = [];
 		const worktreesToCleanup: Array<{ worktreeDir: string; branchName: string }> = [];
 
 		for (const agentResult of results) {
@@ -508,18 +521,49 @@ export async function runParallel(
 			if (failureReason) {
 				retryableFailure = isRetryableError(failureReason);
 				if (retryableFailure) {
-					const deferrals = recordDeferredTask(taskSource.type, task, workDir, prdFile);
-					if (deferrals >= maxRetries) {
-						logError(`Task "${task.title}" failed after ${deferrals} deferrals: ${failureReason}`);
-						logTaskProgress(task.title, "failed", workDir);
-						result.tasksFailed++;
-						notifyTaskFailed(task.title, failureReason);
-						await taskSource.markComplete(task.id);
-						clearDeferredTask(taskSource.type, task, workDir, prdFile);
-						retryableFailure = false;
+					if (autoResumeCodexUsageLimit && isCodexUsageLimitError(failureReason)) {
+						const now = new Date();
+						const resumeAt = computeUsageLimitResumeAt(failureReason, now, usageLimitWaitHours);
+						const source = getUsageLimitResumeSource(failureReason, now);
+						const deferrals = recordDeferredTask(taskSource.type, task, workDir, prdFile, {
+							reason: failureReason,
+							resumeAt: resumeAt.toISOString(),
+						});
+						if (deferrals >= maxRetries) {
+							logError(
+								`Task "${task.title}" failed after ${deferrals} usage-limit deferrals: ${failureReason}`,
+							);
+							logTaskProgress(task.title, "failed", workDir);
+							result.tasksFailed++;
+							notifyTaskFailed(task.title, failureReason);
+							await taskSource.markComplete(task.id);
+							clearDeferredTask(taskSource.type, task, workDir, prdFile);
+							retryableFailure = false;
+						} else {
+							logWarn(
+								`Task "${task.title}" deferred (${deferrals}/${maxRetries}) until ${resumeAt.toLocaleString()} (${formatUsageLimitResumeSource(source, usageLimitWaitHours)}): ${failureReason}`,
+							);
+							usageLimitResumeTimes.push(resumeAt);
+							retryableFailure = false;
+						}
 					} else {
-						logWarn(`Task "${task.title}" deferred (${deferrals}/${maxRetries}): ${failureReason}`);
-						result.tasksFailed++;
+						const deferrals = recordDeferredTask(taskSource.type, task, workDir, prdFile);
+						if (deferrals >= maxRetries) {
+							logError(
+								`Task "${task.title}" failed after ${deferrals} deferrals: ${failureReason}`,
+							);
+							logTaskProgress(task.title, "failed", workDir);
+							result.tasksFailed++;
+							notifyTaskFailed(task.title, failureReason);
+							await taskSource.markComplete(task.id);
+							clearDeferredTask(taskSource.type, task, workDir, prdFile);
+							retryableFailure = false;
+						} else {
+							logWarn(
+								`Task "${task.title}" deferred (${deferrals}/${maxRetries}): ${failureReason}`,
+							);
+							result.tasksFailed++;
+						}
 					}
 				} else {
 					logError(`Task "${task.title}" failed: ${failureReason}`);
@@ -552,20 +596,49 @@ export async function runParallel(
 				const errMsg = aiResult?.error || "Unknown error";
 				retryableFailure = isRetryableError(errMsg);
 				if (retryableFailure) {
-					const deferrals = recordDeferredTask(taskSource.type, task, workDir, prdFile);
-					if (deferrals >= maxRetries) {
-						logError(`Task "${task.title}" failed after ${deferrals} deferrals: ${errMsg}`);
-						logTaskProgress(task.title, "failed", workDir);
-						result.tasksFailed++;
-						notifyTaskFailed(task.title, errMsg);
-						failureReason = errMsg;
-						await taskSource.markComplete(task.id);
-						clearDeferredTask(taskSource.type, task, workDir, prdFile);
-						retryableFailure = false;
+					if (autoResumeCodexUsageLimit && isCodexUsageLimitError(errMsg)) {
+						const now = new Date();
+						const resumeAt = computeUsageLimitResumeAt(errMsg, now, usageLimitWaitHours);
+						const source = getUsageLimitResumeSource(errMsg, now);
+						const deferrals = recordDeferredTask(taskSource.type, task, workDir, prdFile, {
+							reason: errMsg,
+							resumeAt: resumeAt.toISOString(),
+						});
+						if (deferrals >= maxRetries) {
+							logError(
+								`Task "${task.title}" failed after ${deferrals} usage-limit deferrals: ${errMsg}`,
+							);
+							logTaskProgress(task.title, "failed", workDir);
+							result.tasksFailed++;
+							notifyTaskFailed(task.title, errMsg);
+							failureReason = errMsg;
+							await taskSource.markComplete(task.id);
+							clearDeferredTask(taskSource.type, task, workDir, prdFile);
+							retryableFailure = false;
+						} else {
+							logWarn(
+								`Task "${task.title}" deferred (${deferrals}/${maxRetries}) until ${resumeAt.toLocaleString()} (${formatUsageLimitResumeSource(source, usageLimitWaitHours)}): ${errMsg}`,
+							);
+							failureReason = errMsg;
+							usageLimitResumeTimes.push(resumeAt);
+							retryableFailure = false;
+						}
 					} else {
-						logWarn(`Task "${task.title}" deferred (${deferrals}/${maxRetries}): ${errMsg}`);
-						result.tasksFailed++;
-						failureReason = errMsg;
+						const deferrals = recordDeferredTask(taskSource.type, task, workDir, prdFile);
+						if (deferrals >= maxRetries) {
+							logError(`Task "${task.title}" failed after ${deferrals} deferrals: ${errMsg}`);
+							logTaskProgress(task.title, "failed", workDir);
+							result.tasksFailed++;
+							notifyTaskFailed(task.title, errMsg);
+							failureReason = errMsg;
+							await taskSource.markComplete(task.id);
+							clearDeferredTask(taskSource.type, task, workDir, prdFile);
+							retryableFailure = false;
+						} else {
+							logWarn(`Task "${task.title}" deferred (${deferrals}/${maxRetries}): ${errMsg}`);
+							result.tasksFailed++;
+							failureReason = errMsg;
+						}
 					}
 				} else {
 					logError(`Task "${task.title}" failed: ${errMsg}`);
@@ -630,6 +703,16 @@ export async function runParallel(
 		// Log batch completion time
 		const batchDuration = formatDuration(Date.now() - batchStartTime);
 		logInfo(`Batch ${iteration} completed in ${batchDuration}`);
+		if (!sawRetryableFailure && usageLimitResumeTimes.length > 0) {
+			const resumeAt = usageLimitResumeTimes.reduce((latest, current) =>
+				current.getTime() > latest.getTime() ? current : latest,
+			);
+			logWarn(
+				`Batch ${iteration} paused for Codex usage reset until ${resumeAt.toLocaleString()} (${usageLimitResumeTimes.length} task(s) deferred).`,
+			);
+			await waitForUsageLimitResume(resumeAt);
+			continue;
+		}
 		// If any retryable failure occurred, stop the run to allow retry later
 		if (sawRetryableFailure) {
 			logWarn("Stopping early due to retryable errors. Try again later.");

@@ -35,6 +35,12 @@ export function createProgram(): Command {
 		.option("--max-iterations <n>", "Maximum iterations (0 = unlimited)", "0")
 		.option("--max-retries <n>", "Maximum retries per task", "3")
 		.option("--retry-delay <n>", "Delay between retries in seconds", "5")
+		.option(
+			"--usage-limit-wait-hours <n>",
+			"Fallback hours to wait before retrying a Codex usage limit",
+			"5.5",
+		)
+		.option("--no-usage-limit-resume", "Disable automatic wait-and-resume for Codex usage limits")
 		.option("--parallel", "Run tasks in parallel using worktrees")
 		.option(
 			"--sandbox",
@@ -157,6 +163,8 @@ export function parseArgs(args: string[]): {
 		maxIterations: Number.parseInt(opts.maxIterations, 10) || 0,
 		maxRetries: Number.parseInt(opts.maxRetries, 10) || 3,
 		retryDelay: Number.parseInt(opts.retryDelay, 10) || 5,
+		usageLimitResume: opts.usageLimitResume !== false,
+		usageLimitWaitHours: Number.parseFloat(opts.usageLimitWaitHours) || 5.5,
 		verbose: opts.verbose || false,
 		branchPerTask: opts.branchPerTask || false,
 		baseBranch: opts.baseBranch || "",

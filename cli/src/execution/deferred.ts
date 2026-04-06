@@ -3,10 +3,14 @@ import { join } from "node:path";
 import { RALPHY_DIR } from "../config/loader.ts";
 import type { Task, TaskSourceType } from "../tasks/types.ts";
 
+export type DeferredTaskSourceType = TaskSourceType | "single-task";
+
 interface DeferredEntry {
 	count: number;
 	last: string;
 	title: string;
+	reason?: string;
+	resumeAt?: string;
 }
 
 interface DeferredState {
@@ -40,15 +44,16 @@ function writeState(workDir: string, state: DeferredState): void {
 	writeFileSync(getDeferredPath(workDir), JSON.stringify(state, null, 2), "utf-8");
 }
 
-function buildKey(type: TaskSourceType, task: Task, prdFile?: string): string {
+function buildKey(type: DeferredTaskSourceType, task: Task, prdFile?: string): string {
 	return prdFile ? `${type}:${prdFile}:${task.id}` : `${type}:${task.id}`;
 }
 
 export function recordDeferredTask(
-	type: TaskSourceType,
+	type: DeferredTaskSourceType,
 	task: Task,
 	workDir: string,
 	prdFile?: string,
+	details?: { reason?: string; resumeAt?: string },
 ): number {
 	const state = readState(workDir);
 	const key = buildKey(type, task, prdFile);
@@ -58,13 +63,15 @@ export function recordDeferredTask(
 		count: nextCount,
 		last: new Date().toISOString(),
 		title: task.title,
+		reason: details?.reason,
+		resumeAt: details?.resumeAt,
 	};
 	writeState(workDir, state);
 	return nextCount;
 }
 
 export function clearDeferredTask(
-	type: TaskSourceType,
+	type: DeferredTaskSourceType,
 	task: Task,
 	workDir: string,
 	prdFile?: string,

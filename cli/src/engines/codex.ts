@@ -5,6 +5,61 @@ import type { AIResult, EngineOptions } from "./types.ts";
 
 const isWindows = process.platform === "win32";
 
+function collectCodexErrorText(value: unknown): string[] {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed ? [trimmed] : [];
+	}
+
+	if (Array.isArray(value)) {
+		return value.flatMap((item) => collectCodexErrorText(item));
+	}
+
+	if (value && typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		if (typeof record.text === "string") {
+			return collectCodexErrorText(record.text);
+		}
+
+		return [record.message, record.error, record.result, record.content].flatMap((item) =>
+			collectCodexErrorText(item),
+		);
+	}
+
+	return [];
+}
+
+export function extractCodexError(output: string): string | null {
+	const lines = output.split("\n").filter(Boolean);
+
+	for (const line of lines) {
+		try {
+			const parsed = JSON.parse(line) as Record<string, unknown>;
+			const isErrorLine =
+				parsed.type === "error" ||
+				parsed.is_error === true ||
+				(typeof parsed.error === "string" && parsed.error.length > 0);
+
+			if (!isErrorLine) {
+				continue;
+			}
+
+			const messages = [parsed.message, parsed.error, parsed.result]
+				.flatMap((item) => collectCodexErrorText(item))
+				.filter(Boolean);
+			if (messages.length > 0) {
+				return messages.join("\n");
+			}
+
+			return "Unknown error";
+		} catch {
+			// Ignore non-JSON lines
+		}
+	}
+
+	return null;
+}
+
 /**
  * Codex AI Engine
  */
@@ -59,14 +114,14 @@ export class CodexEngine extends BaseAIEngine {
 			}
 
 			// Check for errors in output
-			if (output.includes('"type":"error"')) {
-				const errorMatch = output.match(/"message":"([^"]+)"/);
+			const codexError = extractCodexError(output);
+			if (codexError) {
 				return {
 					success: false,
 					response: "",
 					inputTokens: 0,
 					outputTokens: 0,
-					error: errorMatch?.[1] || "Unknown error",
+					error: codexError,
 				};
 			}
 
