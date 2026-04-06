@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BaseAIEngine, execCommand, formatCommandError } from "./base.ts";
 import type { AIResult, EngineOptions } from "./types.ts";
@@ -67,12 +68,33 @@ export class CodexEngine extends BaseAIEngine {
 	name = "Codex";
 	cliCommand = "codex";
 
+	private getExecutionDirectory(workDir: string): string {
+		if (isWindows && workDir.startsWith("\\\\")) {
+			return tmpdir();
+		}
+
+		return workDir;
+	}
+
 	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
+		const executionDir = this.getExecutionDirectory(workDir);
 		// Codex uses a separate file for the last message
-		const lastMessageFile = join(workDir, `.codex-last-message-${Date.now()}-${process.pid}.txt`);
+		const lastMessageFile = join(
+			executionDir,
+			`.codex-last-message-${Date.now()}-${process.pid}.txt`,
+		);
 
 		try {
-			const args = ["exec", "--full-auto", "--json", "--output-last-message", lastMessageFile];
+			const args = [
+				"exec",
+				"--full-auto",
+				"--json",
+				"--skip-git-repo-check",
+				"-C",
+				workDir,
+				"--output-last-message",
+				lastMessageFile,
+			];
 			if (options?.modelOverride) {
 				args.push("--model", options.modelOverride);
 			}
@@ -92,7 +114,7 @@ export class CodexEngine extends BaseAIEngine {
 			const { stdout, stderr, exitCode } = await execCommand(
 				this.cliCommand,
 				args,
-				workDir,
+				executionDir,
 				undefined,
 				stdinContent,
 			);

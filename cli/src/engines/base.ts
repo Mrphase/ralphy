@@ -1,9 +1,99 @@
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { AIEngine, AIResult, EngineOptions, ProgressCallback } from "./types.ts";
 
 // Check if running in Bun
 const isBun = typeof Bun !== "undefined";
 const isWindows = process.platform === "win32";
+
+function resolveWindowsCommandPath(command: string): string | null {
+	if (!isWindows) {
+		return null;
+	}
+
+	if (command.includes("\\") || command.includes("/")) {
+		return command;
+	}
+
+	try {
+		const result = spawnSync("where", [command], { stdio: "pipe" });
+		if (result.status !== 0) {
+			return null;
+		}
+
+		const candidates = result.stdout
+			.toString()
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter(Boolean);
+
+		const preferredCandidates = [".exe", ".com", ".cmd", ".bat", ".ps1"]
+			.map((extension) =>
+				candidates.find(
+					(candidate) => candidate.toLowerCase().endsWith(extension) && existsSync(candidate),
+				),
+			)
+			.filter((candidate): candidate is string => Boolean(candidate));
+
+		if (preferredCandidates.length > 0) {
+			return preferredCandidates[0];
+		}
+
+		const existingCandidate = candidates.find((candidate) => existsSync(candidate));
+		if (existingCandidate) {
+			return existingCandidate;
+		}
+
+		return candidates[0] || null;
+	} catch {
+		return null;
+	}
+}
+
+function getWindowsPowerShellHost(): string {
+	return (
+		resolveWindowsCommandPath("pwsh") || resolveWindowsCommandPath("powershell") || "powershell.exe"
+	);
+}
+
+function getWindowsSpawnConfig(
+	command: string,
+	args: string[],
+): { command: string; args: string[] } {
+	const resolvedCommand = resolveWindowsCommandPath(command) || command;
+	const lowerResolvedCommand = resolvedCommand.toLowerCase();
+
+	if (lowerResolvedCommand.endsWith(".ps1")) {
+		return {
+			command: getWindowsPowerShellHost(),
+			args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", resolvedCommand, ...args],
+		};
+	}
+
+	if (lowerResolvedCommand.endsWith(".cmd") || lowerResolvedCommand.endsWith(".bat")) {
+		return {
+			command: "cmd.exe",
+			args: ["/c", resolvedCommand, ...args],
+		};
+	}
+
+	if (
+		resolvedCommand.includes("\\") ||
+		resolvedCommand.includes("/") ||
+		lowerResolvedCommand.endsWith(".exe") ||
+		lowerResolvedCommand.endsWith(".com")
+	) {
+		return {
+			command: resolvedCommand,
+			args,
+		};
+	}
+
+	return {
+		command: "cmd.exe",
+		args: ["/c", command, ...args],
+	};
+}
 
 /**
  * Check if a command is available in PATH
@@ -39,9 +129,8 @@ export async function execCommand(
 	stdinContent?: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 	if (isBun) {
-		// On Windows, run through cmd.exe to handle .cmd wrappers (npm global packages)
-		const spawnArgs = isWindows ? ["cmd.exe", "/c", command, ...args] : [command, ...args];
-		const proc = Bun.spawn(spawnArgs, {
+		const spawnConfig = isWindows ? getWindowsSpawnConfig(command, args) : { command, args };
+		const proc = Bun.spawn([spawnConfig.command, ...spawnConfig.args], {
 			cwd: workDir,
 			stdin: stdinContent ? "pipe" : "ignore",
 			stdout: "pipe",
@@ -64,11 +153,10 @@ export async function execCommand(
 		return { stdout, stderr, exitCode };
 	}
 
-	// Node.js fallback - use cmd.exe on Windows to execute .cmd wrappers
+	// Node.js fallback
 	return new Promise((resolve) => {
-		const spawnCommand = isWindows ? "cmd.exe" : command;
-		const spawnArgs = isWindows ? ["/c", command, ...args] : args;
-		const proc = spawn(spawnCommand, spawnArgs, {
+		const spawnConfig = isWindows ? getWindowsSpawnConfig(command, args) : { command, args };
+		const proc = spawn(spawnConfig.command, spawnConfig.args, {
 			cwd: workDir,
 			env: { ...process.env, ...env },
 			stdio: [stdinContent ? "pipe" : "ignore", "pipe", "pipe"],
@@ -270,9 +358,8 @@ export async function execCommandStreaming(
 	stdinContent?: string,
 ): Promise<{ exitCode: number }> {
 	if (isBun) {
-		// On Windows, run through cmd.exe to handle .cmd wrappers (npm global packages)
-		const spawnArgs = isWindows ? ["cmd.exe", "/c", command, ...args] : [command, ...args];
-		const proc = Bun.spawn(spawnArgs, {
+		const spawnConfig = isWindows ? getWindowsSpawnConfig(command, args) : { command, args };
+		const proc = Bun.spawn([spawnConfig.command, ...spawnConfig.args], {
 			cwd: workDir,
 			stdin: stdinContent ? "pipe" : "ignore",
 			stdout: "pipe",
@@ -293,11 +380,10 @@ export async function execCommandStreaming(
 		return { exitCode };
 	}
 
-	// Node.js fallback - use cmd.exe on Windows to execute .cmd wrappers
+	// Node.js fallback
 	return new Promise((resolve) => {
-		const spawnCommand = isWindows ? "cmd.exe" : command;
-		const spawnArgs = isWindows ? ["/c", command, ...args] : args;
-		const proc = spawn(spawnCommand, spawnArgs, {
+		const spawnConfig = isWindows ? getWindowsSpawnConfig(command, args) : { command, args };
+		const proc = spawn(spawnConfig.command, spawnConfig.args, {
 			cwd: workDir,
 			env: { ...process.env, ...env },
 			stdio: [stdinContent ? "pipe" : "ignore", "pipe", "pipe"],
