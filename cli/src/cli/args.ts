@@ -62,6 +62,7 @@ export function createProgram(): Command {
 		.option("--browser", "Enable browser automation (agent-browser)")
 		.option("--no-browser", "Disable browser automation")
 		.option("--model <name>", "Override default model for the engine")
+		.option("--effort <level>", "Override reasoning effort for supported engines")
 		.option("--sonnet", "Shortcut for --claude --model sonnet")
 		.option("--no-merge", "Skip automatic branch merging after parallel execution")
 		.option("--no-knowledge", "Disable cross-iteration knowledge system")
@@ -126,6 +127,7 @@ export function parseArgs(args: string[]): {
 
 	// Determine model override (--sonnet is shortcut for --model sonnet)
 	const modelOverride = opts.sonnet ? "sonnet" : opts.model || undefined;
+	const reasoningEffort = opts.effort || undefined;
 
 	// Determine PRD source with auto-detection for file vs folder
 	let prdSource: "markdown" | "markdown-folder" | "yaml" | "json" | "github" = "markdown";
@@ -183,6 +185,7 @@ export function parseArgs(args: string[]): {
 		autoCommit: opts.commit !== false,
 		browserEnabled: opts.browser === true ? "true" : opts.browser === false ? "false" : "auto",
 		modelOverride,
+		reasoningEffort,
 		skipMerge: opts.merge === false,
 		useSandbox: opts.sandbox || false,
 		engineArgs,

@@ -17,6 +17,8 @@ export interface AIResult {
 export interface EngineOptions {
 	/** Override the default model */
 	modelOverride?: string;
+	/** Override reasoning effort for engines that support it */
+	reasoningEffort?: string;
 	/** Additional arguments to pass to the engine CLI */
 	engineArgs?: string[];
 }

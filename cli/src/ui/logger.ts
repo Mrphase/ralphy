@@ -10,6 +10,13 @@ export function setVerbose(verbose: boolean): void {
 }
 
 /**
+ * Check whether verbose logging is enabled.
+ */
+export function isVerboseEnabled(): boolean {
+	return verboseMode;
+}
+
+/**
  * Log info message
  */
 export function logInfo(...args: unknown[]): void {
@@ -43,6 +50,32 @@ export function logError(...args: unknown[]): void {
 export function logDebug(...args: unknown[]): void {
 	if (verboseMode) {
 		console.log(pc.dim("[DEBUG]"), ...args);
+	}
+}
+
+/**
+ * Log a raw tool output line (only in verbose mode).
+ */
+export function logVerboseOutputLine(label: string, line: string): void {
+	if (!verboseMode) {
+		return;
+	}
+
+	console.log(pc.dim(`[${label}]`), line);
+}
+
+/**
+ * Log multi-line tool output as labeled verbose lines.
+ */
+export function logVerboseOutputBlock(label: string, output: string): void {
+	if (!verboseMode || !output.trim()) {
+		return;
+	}
+
+	for (const line of output.split(/\r?\n/)) {
+		if (line.trim()) {
+			logVerboseOutputLine(label, line);
+		}
 	}
 }
 

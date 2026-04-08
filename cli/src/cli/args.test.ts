@@ -34,6 +34,19 @@ describe("parseArgs", () => {
 		expect(result.options.usageLimitResume).toBe(false);
 	});
 
+	it("parses session-level reasoning effort", () => {
+		const result = parseArgs([
+			"node",
+			"ralphy",
+			"--qgenie",
+			"--effort",
+			"xhigh",
+			"implement feature",
+		]);
+
+		expect(result.options.reasoningEffort).toBe("xhigh");
+	});
+
 	it("parses knowledge show without treating it as a task", () => {
 		const result = parseArgs(["node", "ralphy", "knowledge", "show"]);
 

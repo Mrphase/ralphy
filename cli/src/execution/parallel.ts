@@ -68,6 +68,7 @@ async function runAgentInWorktree(
 	skipLint: boolean,
 	browserEnabled: "auto" | "true" | "false",
 	modelOverride?: string,
+	reasoningEffort?: string,
 	engineArgs?: string[],
 	knowledge?: import("../knowledge/index.ts").KnowledgeOptions,
 ): Promise<ParallelAgentResult> {
@@ -129,11 +130,21 @@ async function runAgentInWorktree(
 		// Execute with retry
 		const engineOptions = {
 			...(modelOverride && { modelOverride }),
+			...(reasoningEffort && { reasoningEffort }),
 			...(engineArgs && engineArgs.length > 0 && { engineArgs }),
 		};
 		const result = await withRetry(
 			async () => {
-				const res = await engine.execute(prompt, worktreeDir, engineOptions);
+				const res = engine.executeStreaming
+					? await engine.executeStreaming(
+							prompt,
+							worktreeDir,
+							(step) => {
+								logDebug(`Agent ${agentNum}: ${step}`);
+							},
+							engineOptions,
+						)
+					: await engine.execute(prompt, worktreeDir, engineOptions);
 				if (!res.success && res.error && isRetryableError(res.error)) {
 					throw new Error(res.error);
 				}
@@ -170,6 +181,7 @@ async function runAgentInSandbox(
 	skipLint: boolean,
 	browserEnabled: "auto" | "true" | "false",
 	modelOverride?: string,
+	reasoningEffort?: string,
 	engineArgs?: string[],
 	knowledge?: import("../knowledge/index.ts").KnowledgeOptions,
 ): Promise<ParallelAgentResult> {
@@ -231,11 +243,21 @@ async function runAgentInSandbox(
 		// Execute with retry
 		const engineOptions = {
 			...(modelOverride && { modelOverride }),
+			...(reasoningEffort && { reasoningEffort }),
 			...(engineArgs && engineArgs.length > 0 && { engineArgs }),
 		};
 		const result = await withRetry(
 			async () => {
-				const res = await engine.execute(prompt, sandboxDir, engineOptions);
+				const res = engine.executeStreaming
+					? await engine.executeStreaming(
+							prompt,
+							sandboxDir,
+							(step) => {
+								logDebug(`Agent ${agentNum}: ${step}`);
+							},
+							engineOptions,
+						)
+					: await engine.execute(prompt, sandboxDir, engineOptions);
 				if (!res.success && res.error && isRetryableError(res.error)) {
 					throw new Error(res.error);
 				}
@@ -289,6 +311,7 @@ export async function runParallel(
 		prdIsFolder = false,
 		browserEnabled,
 		modelOverride,
+		reasoningEffort,
 		skipMerge,
 		useSandbox = false,
 		engineArgs,
@@ -428,6 +451,7 @@ export async function runParallel(
 					skipLint,
 					browserEnabled,
 					modelOverride,
+					reasoningEffort,
 					engineArgs,
 					knowledge,
 				);
@@ -452,6 +476,7 @@ export async function runParallel(
 				skipLint,
 				browserEnabled,
 				modelOverride,
+				reasoningEffort,
 				engineArgs,
 				knowledge,
 			).then((res) => {
@@ -743,6 +768,7 @@ export async function runParallel(
 				engine,
 				workDir,
 				modelOverride,
+				reasoningEffort,
 				engineArgs,
 			);
 
@@ -782,6 +808,7 @@ async function mergeCompletedBranches(
 	engine: AIEngine,
 	workDir: string,
 	modelOverride?: string,
+	reasoningEffort?: string,
 	engineArgs?: string[],
 ): Promise<void> {
 	if (branches.length === 0) {
@@ -831,6 +858,7 @@ async function mergeCompletedBranches(
 				branch,
 				workDir,
 				modelOverride,
+				reasoningEffort,
 				engineArgs,
 			);
 

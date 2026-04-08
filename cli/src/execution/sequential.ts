@@ -36,6 +36,8 @@ export interface ExecutionOptions {
 	activeSettings?: string[];
 	/** Override default model for the engine */
 	modelOverride?: string;
+	/** Override reasoning effort for engines that support it */
+	reasoningEffort?: string;
 	/** Skip automatic branch merging after parallel execution */
 	skipMerge?: boolean;
 	/** Use lightweight sandboxes instead of git worktrees for parallel execution */
@@ -77,6 +79,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 		browserEnabled,
 		activeSettings,
 		modelOverride,
+		reasoningEffort,
 		engineArgs,
 		syncIssue,
 		knowledge,
@@ -150,6 +153,7 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 								// Use streaming if available
 								const engineOptions = {
 									...(modelOverride && { modelOverride }),
+									...(reasoningEffort && { reasoningEffort }),
 									...(engineArgs && engineArgs.length > 0 && { engineArgs }),
 								};
 								if (engine.executeStreaming) {

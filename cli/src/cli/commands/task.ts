@@ -86,6 +86,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 						// Build engine options
 						const engineOptions = {
 							...(options.modelOverride && { modelOverride: options.modelOverride }),
+							...(options.reasoningEffort && { reasoningEffort: options.reasoningEffort }),
 							...(options.engineArgs &&
 								options.engineArgs.length > 0 && { engineArgs: options.engineArgs }),
 						};

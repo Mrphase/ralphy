@@ -1,13 +1,25 @@
 import { tmpdir } from "node:os";
-import { logDebug } from "../ui/logger.ts";
-import { BaseAIEngine, checkForErrors, execCommand, formatCommandError } from "./base.ts";
-import type { AIResult, EngineOptions } from "./types.ts";
+import { logDebug, logVerboseOutputBlock, logVerboseOutputLine } from "../ui/logger.ts";
+import {
+	BaseAIEngine,
+	type CommandOutputStream,
+	checkForErrors,
+	execCommand,
+	execCommandStreaming,
+	formatCommandError,
+} from "./base.ts";
+import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
+
+const DEFAULT_QGENIE_MODEL = "azure::gpt-5.4";
+const DEFAULT_QGENIE_REASONING_EFFORT = "xhigh";
 
 /**
  * QGenie CLI AI Engine
  *
- * CLI invocation: `qgenie agent`
- * Model format: azure::gpt-5.4 high (use /model to change interactively)
+ * CLI invocation: `qgenie agent exec`
+ * Default model: azure::gpt-5.4
+ * Default reasoning effort: xhigh
+ * Reasoning effort can be overridden via `-c model_reasoning_effort="..."`
  *
  * Note: executeStreaming is intentionally not implemented for QGenie
  * because we don't yet know its streaming output format.
@@ -15,6 +27,10 @@ import type { AIResult, EngineOptions } from "./types.ts";
 export class QGenieEngine extends BaseAIEngine {
 	name = "QGenie";
 	cliCommand = "qgenie";
+
+	private hasReasoningEffortOverride(engineArgs?: string[]): boolean {
+		return (engineArgs || []).some((arg) => arg.includes("model_reasoning_effort"));
+	}
 
 	/**
 	 * Use a local execution directory on Windows when the target workspace is a UNC path.
@@ -32,6 +48,8 @@ export class QGenieEngine extends BaseAIEngine {
 	 */
 	private buildArgs(workDir: string, options?: EngineOptions): { args: string[] } {
 		const args: string[] = [];
+		const model = options?.modelOverride || DEFAULT_QGENIE_MODEL;
+		const reasoningEffort = options?.reasoningEffort || DEFAULT_QGENIE_REASONING_EFFORT;
 
 		// Subcommand: agent exec (non-interactive)
 		args.push("agent");
@@ -41,8 +59,10 @@ export class QGenieEngine extends BaseAIEngine {
 		args.push("-C", workDir);
 		args.push("--skip-git-repo-check");
 
-		if (options?.modelOverride) {
-			args.push("--model", options.modelOverride);
+		args.push("--model", model);
+
+		if (reasoningEffort && !this.hasReasoningEffortOverride(options?.engineArgs)) {
+			args.push("-c", `model_reasoning_effort="${reasoningEffort}"`);
 		}
 		if (options?.engineArgs && options.engineArgs.length > 0) {
 			args.push(...options.engineArgs);
@@ -50,27 +70,63 @@ export class QGenieEngine extends BaseAIEngine {
 		return { args };
 	}
 
-	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
-		const executionDir = this.getExecutionDirectory(workDir);
-		const { args } = this.buildArgs(workDir, options);
+	private logExecutionContext(
+		prompt: string,
+		workDir: string,
+		executionDir: string,
+		args: string[],
+		options?: EngineOptions,
+	): void {
+		const effectiveModel = options?.modelOverride || DEFAULT_QGENIE_MODEL;
+		const effectiveReasoningEffort = options?.reasoningEffort || DEFAULT_QGENIE_REASONING_EFFORT;
 
 		logDebug(`[QGenie] Working directory: ${workDir}`);
 		logDebug(`[QGenie] Execution directory: ${executionDir}`);
 		logDebug(`[QGenie] Prompt length: ${prompt.length} chars`);
-		logDebug(`[QGenie] Command: ${this.cliCommand} ${args.join(" ")}`);
-
-		const startTime = Date.now();
-		const { stdout, stderr, exitCode } = await execCommand(
-			this.cliCommand,
-			args,
-			executionDir,
-			undefined,
-			prompt,
+		logDebug(`[QGenie] Prompt preview: ${prompt.substring(0, 200)}...`);
+		logDebug(`[QGenie] Model: ${effectiveModel}`);
+		logDebug(`[QGenie] Reasoning effort: ${effectiveReasoningEffort}`);
+		logDebug(
+			`[QGenie] Extra engine args: ${options?.engineArgs?.length ? options.engineArgs.join(" ") : "(none)"}`,
 		);
-		const durationMs = Date.now() - startTime;
+		logDebug(`[QGenie] Command: ${this.cliCommand} ${args.join(" ")}`);
+	}
 
-		const output = stdout + stderr;
+	private logCapturedStreams(stdout: string, stderr: string): void {
+		logVerboseOutputBlock("QGenie stdout", stdout);
+		logVerboseOutputBlock("QGenie stderr", stderr);
+	}
 
+	private logStreamLine(line: string, stream: CommandOutputStream): void {
+		logVerboseOutputLine(`QGenie ${stream}`, line);
+	}
+
+	private detectProgressFromLine(line: string): string | null {
+		const trimmedLower = line.trim().toLowerCase();
+
+		if (!trimmedLower) {
+			return null;
+		}
+		if (trimmedLower.startsWith("thinking")) {
+			return "Thinking";
+		}
+		if (trimmedLower.startsWith("reading") || trimmedLower.startsWith("searching")) {
+			return "Reading code";
+		}
+		if (trimmedLower.startsWith("working on it") || trimmedLower.startsWith("editing")) {
+			return "Implementing";
+		}
+		if (trimmedLower.startsWith("testing") || trimmedLower.startsWith("running tests")) {
+			return "Testing";
+		}
+		if (trimmedLower.startsWith("done") || trimmedLower.startsWith("completed")) {
+			return "Finalizing";
+		}
+
+		return null;
+	}
+
+	private buildResult(output: string, exitCode: number, durationMs: number): AIResult {
 		logDebug(`[QGenie] Exit code: ${exitCode}`);
 		logDebug(`[QGenie] Duration: ${durationMs}ms`);
 		logDebug(`[QGenie] Output length: ${output.length} chars`);
@@ -120,6 +176,64 @@ export class QGenieEngine extends BaseAIEngine {
 			outputTokens,
 			cost: durationMs > 0 ? `duration:${durationMs}` : undefined,
 		};
+	}
+
+	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
+		const executionDir = this.getExecutionDirectory(workDir);
+		const { args } = this.buildArgs(workDir, options);
+
+		this.logExecutionContext(prompt, workDir, executionDir, args, options);
+
+		const startTime = Date.now();
+		const { stdout, stderr, exitCode } = await execCommand(
+			this.cliCommand,
+			args,
+			executionDir,
+			undefined,
+			prompt,
+		);
+		const durationMs = Date.now() - startTime;
+
+		this.logCapturedStreams(stdout, stderr);
+
+		const output = stdout + stderr;
+		return this.buildResult(output, exitCode, durationMs);
+	}
+
+	async executeStreaming(
+		prompt: string,
+		workDir: string,
+		onProgress: ProgressCallback,
+		options?: EngineOptions,
+	): Promise<AIResult> {
+		const executionDir = this.getExecutionDirectory(workDir);
+		const { args } = this.buildArgs(workDir, options);
+		const outputLines: string[] = [];
+
+		this.logExecutionContext(prompt, workDir, executionDir, args, options);
+		onProgress("Working");
+
+		const startTime = Date.now();
+		const { exitCode } = await execCommandStreaming(
+			this.cliCommand,
+			args,
+			executionDir,
+			(line, stream) => {
+				outputLines.push(line);
+				this.logStreamLine(line, stream);
+
+				const step = this.detectProgressFromLine(line);
+				if (step) {
+					onProgress(step);
+				}
+			},
+			undefined,
+			prompt,
+		);
+		const durationMs = Date.now() - startTime;
+		const output = outputLines.join("\n");
+
+		return this.buildResult(output, exitCode, durationMs);
 	}
 
 	/**

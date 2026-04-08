@@ -119,6 +119,8 @@ export interface RuntimeOptions {
 	browserEnabled: "auto" | "true" | "false";
 	/** Override default model for the engine */
 	modelOverride?: string;
+	/** Override reasoning effort for engines that support it */
+	reasoningEffort?: string;
 	/** Skip automatic branch merging after parallel execution */
 	skipMerge?: boolean;
 	/** Use lightweight sandboxes instead of git worktrees for parallel execution */

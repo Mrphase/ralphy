@@ -2,6 +2,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { AIEngine, AIResult, EngineOptions, ProgressCallback } from "./types.ts";
 
+export type CommandOutputStream = "stdout" | "stderr";
+
 // Check if running in Bun
 const isBun = typeof Bun !== "undefined";
 const isWindows = process.platform === "win32";
@@ -323,7 +325,8 @@ export function formatCommandError(exitCode: number, output: string): string {
  */
 async function readStream(
 	stream: ReadableStream<Uint8Array>,
-	onLine: (line: string) => void,
+	onLine: (line: string, stream: CommandOutputStream) => void,
+	streamName: CommandOutputStream,
 ): Promise<void> {
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
@@ -336,10 +339,10 @@ async function readStream(
 			const lines = buffer.split("\n");
 			buffer = lines.pop() || "";
 			for (const line of lines) {
-				if (line.trim()) onLine(line);
+				if (line.trim()) onLine(line, streamName);
 			}
 		}
-		if (buffer.trim()) onLine(buffer);
+		if (buffer.trim()) onLine(buffer, streamName);
 	} finally {
 		reader.releaseLock();
 	}
@@ -353,7 +356,7 @@ export async function execCommandStreaming(
 	command: string,
 	args: string[],
 	workDir: string,
-	onLine: (line: string) => void,
+	onLine: (line: string, stream: CommandOutputStream) => void,
 	env?: Record<string, string>,
 	stdinContent?: string,
 ): Promise<{ exitCode: number }> {
@@ -374,7 +377,10 @@ export async function execCommandStreaming(
 		}
 
 		// Process both stdout and stderr in parallel
-		await Promise.all([readStream(proc.stdout, onLine), readStream(proc.stderr, onLine)]);
+		await Promise.all([
+			readStream(proc.stdout, onLine, "stdout"),
+			readStream(proc.stderr, onLine, "stderr"),
+		]);
 
 		const exitCode = await proc.exited;
 		return { exitCode };
@@ -398,35 +404,35 @@ export async function execCommandStreaming(
 		let stdoutBuffer = "";
 		let stderrBuffer = "";
 
-		const processBuffer = (buffer: string, isStderr = false) => {
+		const processBuffer = (buffer: string, stream: CommandOutputStream) => {
 			const lines = buffer.split("\n");
 			const remaining = lines.pop() || "";
 			for (const line of lines) {
-				if (line.trim()) onLine(line);
+				if (line.trim()) onLine(line, stream);
 			}
 			return remaining;
 		};
 
 		proc.stdout?.on("data", (data) => {
 			stdoutBuffer += data.toString();
-			stdoutBuffer = processBuffer(stdoutBuffer);
+			stdoutBuffer = processBuffer(stdoutBuffer, "stdout");
 		});
 
 		proc.stderr?.on("data", (data) => {
 			stderrBuffer += data.toString();
-			stderrBuffer = processBuffer(stderrBuffer, true);
+			stderrBuffer = processBuffer(stderrBuffer, "stderr");
 		});
 
 		proc.on("close", (exitCode) => {
 			// Process any remaining data
-			if (stdoutBuffer.trim()) onLine(stdoutBuffer);
-			if (stderrBuffer.trim()) onLine(stderrBuffer);
+			if (stdoutBuffer.trim()) onLine(stdoutBuffer, "stdout");
+			if (stderrBuffer.trim()) onLine(stderrBuffer, "stderr");
 			resolve({ exitCode: exitCode ?? 1 });
 		});
 
 		proc.on("error", (err) => {
 			// Maintain backward compatibility - don't reject, report error via onLine
-			onLine(`Spawn error: ${err.message}`);
+			onLine(`Spawn error: ${err.message}`, "stderr");
 			resolve({ exitCode: 1 });
 		});
 	});

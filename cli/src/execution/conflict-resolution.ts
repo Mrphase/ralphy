@@ -36,6 +36,7 @@ export async function resolveConflictsWithAI(
 	branchName: string,
 	workDir: string,
 	modelOverride?: string,
+	reasoningEffort?: string,
 	engineArgs?: string[],
 ): Promise<boolean> {
 	if (conflictedFiles.length === 0) {
@@ -48,6 +49,7 @@ export async function resolveConflictsWithAI(
 	const prompt = buildConflictResolutionPrompt(conflictedFiles, branchName);
 	const engineOptions = {
 		...(modelOverride && { modelOverride }),
+		...(reasoningEffort && { reasoningEffort }),
 		...(engineArgs && engineArgs.length > 0 && { engineArgs }),
 	};
 
