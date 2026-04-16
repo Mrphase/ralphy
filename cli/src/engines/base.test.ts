@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	checkForErrors,
+	extractDisplayLinesFromStreamJsonLine,
 	extractAuthenticationError,
 	formatCommandError,
 	parseStreamJsonResult,
@@ -92,6 +93,54 @@ describe("checkForErrors", () => {
 		const error = checkForErrors(output);
 
 		expect(error).toBe("First error");
+	});
+});
+
+describe("extractDisplayLinesFromStreamJsonLine", () => {
+	it("should return assistant string messages", () => {
+		const lines = extractDisplayLinesFromStreamJsonLine(
+			'{"type":"assistant","message":"Inspecting the calculator project"}',
+		);
+
+		expect(lines).toEqual(["Inspecting the calculator project"]);
+	});
+
+	it("should return assistant content text entries", () => {
+		const lines = extractDisplayLinesFromStreamJsonLine(
+			'{"type":"assistant","message":{"content":[{"type":"text","text":"First line"},{"type":"text","text":"Second line"}]}}',
+		);
+
+		expect(lines).toEqual(["First line", "Second line"]);
+	});
+
+	it("should return result text", () => {
+		const lines = extractDisplayLinesFromStreamJsonLine(
+			'{"type":"result","result":"Final answer"}',
+		);
+
+		expect(lines).toEqual(["Final answer"]);
+	});
+
+	it("should return error text", () => {
+		const lines = extractDisplayLinesFromStreamJsonLine(
+			'{"type":"error","error":{"message":"Authentication failed"}}',
+		);
+
+		expect(lines).toEqual(["Authentication failed"]);
+	});
+
+	it("should return null for tool events without user-visible text", () => {
+		const lines = extractDisplayLinesFromStreamJsonLine(
+			'{"type":"tool_use","tool":"Read","path":"src/index.ts"}',
+		);
+
+		expect(lines).toBeNull();
+	});
+
+	it("should return raw non-json lines", () => {
+		const lines = extractDisplayLinesFromStreamJsonLine("plain text line");
+
+		expect(lines).toEqual(["plain text line"]);
 	});
 });
 

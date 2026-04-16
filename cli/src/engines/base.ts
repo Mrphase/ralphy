@@ -222,6 +222,91 @@ export function parseStreamJsonResult(output: string): {
 	return { response: response || "Task completed", inputTokens, outputTokens };
 }
 
+function normalizeDisplayText(value: unknown): string[] {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed ? [trimmed] : [];
+	}
+
+	if (Array.isArray(value)) {
+		return value.flatMap((item) => normalizeDisplayText(item));
+	}
+
+	if (!value || typeof value !== "object") {
+		return [];
+	}
+
+	const record = value as Record<string, unknown>;
+
+	if (typeof record.text === "string") {
+		return normalizeDisplayText(record.text);
+	}
+
+	if (record.type === "text" && typeof record.text === "string") {
+		return normalizeDisplayText(record.text);
+	}
+
+	if (record.content !== undefined) {
+		const contentLines = normalizeDisplayText(record.content);
+		if (contentLines.length > 0) {
+			return contentLines;
+		}
+	}
+
+	if (record.message !== undefined) {
+		const messageLines = normalizeDisplayText(record.message);
+		if (messageLines.length > 0) {
+			return messageLines;
+		}
+	}
+
+	return [];
+}
+
+/**
+ * Extract human-readable text from a single stream-json line.
+ * Returns null for machine-oriented JSON events that should stay hidden in verbose mode.
+ */
+export function extractDisplayLinesFromStreamJsonLine(line: string): string[] | null {
+	const trimmed = line.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	try {
+		const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+		if (parsed.type === "assistant") {
+			const assistantLines = normalizeDisplayText(parsed.message);
+			if (assistantLines.length > 0) {
+				return assistantLines;
+			}
+
+			const contentLines = normalizeDisplayText(parsed.content);
+			return contentLines.length > 0 ? contentLines : null;
+		}
+
+		if (parsed.type === "result") {
+			const resultLines = normalizeDisplayText(parsed.result);
+			return resultLines.length > 0 ? resultLines : null;
+		}
+
+		if (parsed.type === "error") {
+			const errorLines = normalizeDisplayText(parsed.error);
+			if (errorLines.length > 0) {
+				return errorLines;
+			}
+
+			const messageLines = normalizeDisplayText(parsed.message);
+			return messageLines.length > 0 ? messageLines : null;
+		}
+
+		return null;
+	} catch {
+		return [line];
+	}
+}
+
 /**
  * Check for errors in stream-json output
  */

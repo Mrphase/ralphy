@@ -4,10 +4,12 @@ import {
 	detectStepFromOutput,
 	execCommand,
 	execCommandStreaming,
+	extractDisplayLinesFromStreamJsonLine,
 	formatCommandError,
 	parseStreamJsonResult,
 } from "./base.ts";
 import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
+import { logDebug, logVerboseOutputLine } from "../ui/logger.ts";
 
 const isWindows = process.platform === "win32";
 
@@ -17,6 +19,36 @@ const isWindows = process.platform === "win32";
 export class ClaudeEngine extends BaseAIEngine {
 	name = "Claude Code";
 	cliCommand = "claude";
+
+	private logExecutionContext(prompt: string, workDir: string, args: string[], options?: EngineOptions): void {
+		logDebug(`[Claude] Working directory: ${workDir}`);
+		logDebug(`[Claude] Prompt length: ${prompt.length} chars`);
+		logDebug(`[Claude] Prompt preview: ${prompt.substring(0, 200)}...`);
+		logDebug(`[Claude] Model: ${options?.modelOverride || "(default)"}`);
+		logDebug(
+			`[Claude] Extra engine args: ${options?.engineArgs?.length ? options.engineArgs.join(" ") : "(none)"}`,
+		);
+		logDebug(`[Claude] Command: ${this.cliCommand} ${args.join(" ")}`);
+	}
+
+	private logOutputLine(line: string, stream: "stdout" | "stderr"): void {
+		const displayLines = extractDisplayLinesFromStreamJsonLine(line);
+		if (!displayLines) {
+			return;
+		}
+
+		for (const displayLine of displayLines) {
+			logVerboseOutputLine(`Claude ${stream}`, displayLine);
+		}
+	}
+
+	private logCapturedOutput(output: string, stream: "stdout" | "stderr"): void {
+		for (const line of output.split(/\r?\n/)) {
+			if (line.trim()) {
+				this.logOutputLine(line, stream);
+			}
+		}
+	}
 
 	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
 		const args = ["--dangerously-skip-permissions", "--verbose", "--output-format", "stream-json"];
@@ -38,6 +70,8 @@ export class ClaudeEngine extends BaseAIEngine {
 			args.push("-p", prompt);
 		}
 
+		this.logExecutionContext(prompt, workDir, args, options);
+
 		const { stdout, stderr, exitCode } = await execCommand(
 			this.cliCommand,
 			args,
@@ -45,6 +79,9 @@ export class ClaudeEngine extends BaseAIEngine {
 			undefined,
 			stdinContent,
 		);
+
+		this.logCapturedOutput(stdout, "stdout");
+		this.logCapturedOutput(stderr, "stderr");
 
 		const output = stdout + stderr;
 
@@ -107,14 +144,17 @@ export class ClaudeEngine extends BaseAIEngine {
 			args.push("-p", prompt);
 		}
 
+		this.logExecutionContext(prompt, workDir, args, options);
+
 		const outputLines: string[] = [];
 
 		const { exitCode } = await execCommandStreaming(
 			this.cliCommand,
 			args,
 			workDir,
-			(line) => {
+			(line, stream) => {
 				outputLines.push(line);
+				this.logOutputLine(line, stream);
 
 				// Detect and report step changes
 				const step = detectStepFromOutput(line);
