@@ -8,6 +8,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === "win32";
 const userArgs = process.argv.slice(2);
 
+function quoteInvocationArg(arg) {
+	if (!/[ \t"]/.test(arg)) {
+		return arg;
+	}
+
+	return `"${arg.replace(/(["\\])/g, "\\$1")}"`;
+}
+
+function buildInvocationFallback() {
+	const entrypoint = process.argv[1] || "ralphy";
+	const renderedArgs = userArgs.map(quoteInvocationArg).join(" ");
+	return renderedArgs ? `${entrypoint} ${renderedArgs}` : entrypoint;
+}
+
+process.env.RALPHY_INVOCATION ??= buildInvocationFallback();
+
 function getPlatformBinary() {
 	const platform = process.platform;
 	const arch = process.arch;

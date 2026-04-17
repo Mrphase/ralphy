@@ -10,6 +10,7 @@ import {
 } from "./base.ts";
 import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
 import { logDebug, logVerboseOutputLine } from "../ui/logger.ts";
+import { getOrCreateSessionLog, type SessionLogWriter } from "../ui/session-log.ts";
 
 const isWindows = process.platform === "win32";
 
@@ -19,6 +20,10 @@ const isWindows = process.platform === "win32";
 export class ClaudeEngine extends BaseAIEngine {
 	name = "Claude Code";
 	cliCommand = "claude";
+
+	private getLogModelName(options?: EngineOptions): string {
+		return options?.modelOverride || "claude";
+	}
 
 	private logExecutionContext(prompt: string, workDir: string, args: string[], options?: EngineOptions): void {
 		logDebug(`[Claude] Working directory: ${workDir}`);
@@ -31,21 +36,30 @@ export class ClaudeEngine extends BaseAIEngine {
 		logDebug(`[Claude] Command: ${this.cliCommand} ${args.join(" ")}`);
 	}
 
-	private logOutputLine(line: string, stream: "stdout" | "stderr"): void {
+	private logOutputLine(
+		line: string,
+		stream: "stdout" | "stderr",
+		sessionLog?: SessionLogWriter,
+	): void {
 		const displayLines = extractDisplayLinesFromStreamJsonLine(line);
 		if (!displayLines) {
 			return;
 		}
 
 		for (const displayLine of displayLines) {
+			sessionLog?.append(displayLine);
 			logVerboseOutputLine(`Claude ${stream}`, displayLine);
 		}
 	}
 
-	private logCapturedOutput(output: string, stream: "stdout" | "stderr"): void {
+	private logCapturedOutput(
+		output: string,
+		stream: "stdout" | "stderr",
+		sessionLog?: SessionLogWriter,
+	): void {
 		for (const line of output.split(/\r?\n/)) {
 			if (line.trim()) {
-				this.logOutputLine(line, stream);
+				this.logOutputLine(line, stream, sessionLog);
 			}
 		}
 	}
@@ -71,6 +85,10 @@ export class ClaudeEngine extends BaseAIEngine {
 		}
 
 		this.logExecutionContext(prompt, workDir, args, options);
+		const sessionLog = getOrCreateSessionLog({
+			workDir,
+			modelName: this.getLogModelName(options),
+		});
 
 		const { stdout, stderr, exitCode } = await execCommand(
 			this.cliCommand,
@@ -80,8 +98,8 @@ export class ClaudeEngine extends BaseAIEngine {
 			stdinContent,
 		);
 
-		this.logCapturedOutput(stdout, "stdout");
-		this.logCapturedOutput(stderr, "stderr");
+		this.logCapturedOutput(stdout, "stdout", sessionLog);
+		this.logCapturedOutput(stderr, "stderr", sessionLog);
 
 		const output = stdout + stderr;
 
@@ -145,6 +163,10 @@ export class ClaudeEngine extends BaseAIEngine {
 		}
 
 		this.logExecutionContext(prompt, workDir, args, options);
+		const sessionLog = getOrCreateSessionLog({
+			workDir,
+			modelName: this.getLogModelName(options),
+		});
 
 		const outputLines: string[] = [];
 
@@ -154,7 +176,7 @@ export class ClaudeEngine extends BaseAIEngine {
 			workDir,
 			(line, stream) => {
 				outputLines.push(line);
-				this.logOutputLine(line, stream);
+				this.logOutputLine(line, stream, sessionLog);
 
 				// Detect and report step changes
 				const step = detectStepFromOutput(line);

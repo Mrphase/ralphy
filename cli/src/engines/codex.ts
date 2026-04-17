@@ -1,72 +1,60 @@
-import { existsSync, readFileSync, rmSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BaseAIEngine, execCommand, formatCommandError } from "./base.ts";
+import {
+	BaseAIEngine,
+	execCommandStreaming,
+	extractCodexLikeError,
+	extractDisplayLinesFromCodexEventLine,
+	formatCommandError,
+} from "./base.ts";
 import type { AIResult, EngineOptions } from "./types.ts";
+import { logDebug, logVerboseOutputLine } from "../ui/logger.ts";
+import { getOrCreateSessionLog, type SessionLogWriter } from "../ui/session-log.ts";
 
 const isWindows = process.platform === "win32";
 
-function collectCodexErrorText(value: unknown): string[] {
-	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed ? [trimmed] : [];
-	}
-
-	if (Array.isArray(value)) {
-		return value.flatMap((item) => collectCodexErrorText(item));
-	}
-
-	if (value && typeof value === "object") {
-		const record = value as Record<string, unknown>;
-		if (typeof record.text === "string") {
-			return collectCodexErrorText(record.text);
-		}
-
-		return [record.message, record.error, record.result, record.content].flatMap((item) =>
-			collectCodexErrorText(item),
-		);
-	}
-
-	return [];
-}
-
 export function extractCodexError(output: string): string | null {
-	const lines = output.split("\n").filter(Boolean);
-
-	for (const line of lines) {
-		try {
-			const parsed = JSON.parse(line) as Record<string, unknown>;
-			const isErrorLine =
-				parsed.type === "error" ||
-				parsed.is_error === true ||
-				(typeof parsed.error === "string" && parsed.error.length > 0);
-
-			if (!isErrorLine) {
-				continue;
-			}
-
-			const messages = [parsed.message, parsed.error, parsed.result]
-				.flatMap((item) => collectCodexErrorText(item))
-				.filter(Boolean);
-			if (messages.length > 0) {
-				return messages.join("\n");
-			}
-
-			return "Unknown error";
-		} catch {
-			// Ignore non-JSON lines
-		}
-	}
-
-	return null;
+	return extractCodexLikeError(output);
 }
 
 /**
- * Codex AI Engine
+ * Codex AI Engine - with verbose logging and clean session logs
  */
 export class CodexEngine extends BaseAIEngine {
 	name = "Codex";
 	cliCommand = "codex";
+
+	private getLogModelName(options?: EngineOptions): string {
+		return options?.modelOverride || "codex";
+	}
+
+	private logExecutionContext(prompt: string, workDir: string, args: string[], options?: EngineOptions): void {
+		logDebug(`[Codex] Working directory: ${workDir}`);
+		logDebug(`[Codex] Prompt length: ${prompt.length} chars`);
+		logDebug(`[Codex] Prompt preview: ${prompt.substring(0, 200)}...`);
+		logDebug(`[Codex] Model: ${options?.modelOverride || "(default)"}`);
+		logDebug(
+			`[Codex] Extra engine args: ${options?.engineArgs?.length ? options.engineArgs.join(" ") : "(none)"}`,
+		);
+		logDebug(`[Codex] Command: ${this.cliCommand} ${args.join(" ")}`);
+	}
+
+	private logOutputLine(
+		line: string,
+		stream: "stdout" | "stderr",
+		sessionLog?: SessionLogWriter,
+	): void {
+		const displayLines = extractDisplayLinesFromCodexEventLine(line);
+		if (!displayLines || displayLines.length === 0) {
+			return;
+		}
+
+		for (const displayLine of displayLines) {
+			sessionLog?.append(displayLine);
+			logVerboseOutputLine(`Codex ${stream}`, displayLine);
+		}
+	}
 
 	private getExecutionDirectory(workDir: string): string {
 		if (isWindows && workDir.startsWith("\\\\")) {
@@ -78,7 +66,11 @@ export class CodexEngine extends BaseAIEngine {
 
 	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
 		const executionDir = this.getExecutionDirectory(workDir);
-		// Codex uses a separate file for the last message
+		const sessionLog = getOrCreateSessionLog({
+			workDir,
+			modelName: this.getLogModelName(options),
+		});
+
 		const lastMessageFile = join(
 			executionDir,
 			`.codex-last-message-${Date.now()}-${process.pid}.txt`,
@@ -98,12 +90,10 @@ export class CodexEngine extends BaseAIEngine {
 			if (options?.modelOverride) {
 				args.push("--model", options.modelOverride);
 			}
-			// Add any additional engine-specific arguments
 			if (options?.engineArgs && options.engineArgs.length > 0) {
 				args.push(...options.engineArgs);
 			}
 
-			// On Windows, pass prompt via stdin to avoid cmd.exe argument parsing issues with multi-line content
 			let stdinContent: string | undefined;
 			if (isWindows) {
 				stdinContent = prompt;
@@ -111,67 +101,45 @@ export class CodexEngine extends BaseAIEngine {
 				args.push(prompt);
 			}
 
-			const { stdout, stderr, exitCode } = await execCommand(
+			this.logExecutionContext(prompt, workDir, args, options);
+
+			// Use streaming for real-time logging
+			const outputLines: string[] = [];
+
+			const { exitCode } = await execCommandStreaming(
 				this.cliCommand,
 				args,
 				executionDir,
+				(line, stream) => {
+					outputLines.push(line);
+					this.logOutputLine(line, stream, sessionLog);
+				},
 				undefined,
 				stdinContent,
 			);
 
-			const output = stdout + stderr;
+			const output = outputLines.join("\n");
 
-			// Read the last message from the file
 			let response = "";
 			if (existsSync(lastMessageFile)) {
 				response = readFileSync(lastMessageFile, "utf-8");
-				// Remove the "Task completed successfully." prefix if present
 				response = response.replace(/^Task completed successfully\.\s*/i, "").trim();
-				// Clean up the temp file
-				try {
-					unlinkSync(lastMessageFile);
-				} catch {
-					// Ignore cleanup errors
-				}
+				try { unlinkSync(lastMessageFile); } catch { /* ignore */ }
 			}
 
-			// Check for errors in output
 			const codexError = extractCodexError(output);
 			if (codexError) {
-				return {
-					success: false,
-					response: "",
-					inputTokens: 0,
-					outputTokens: 0,
-					error: codexError,
-				};
+				return { success: false, response: "", inputTokens: 0, outputTokens: 0, error: codexError };
 			}
 
-			// If command failed with non-zero exit code, provide a meaningful error
 			if (exitCode !== 0) {
-				return {
-					success: false,
-					response: response || "Task completed",
-					inputTokens: 0,
-					outputTokens: 0,
-					error: formatCommandError(exitCode, output),
-				};
+				return { success: false, response: response || "Task completed", inputTokens: 0, outputTokens: 0, error: formatCommandError(exitCode, output) };
 			}
 
-			return {
-				success: true,
-				response: response || "Task completed",
-				inputTokens: 0, // Codex doesn't expose token counts
-				outputTokens: 0,
-			};
+			return { success: true, response: response || "Task completed", inputTokens: 0, outputTokens: 0 };
 		} finally {
-			// Ensure cleanup
 			if (existsSync(lastMessageFile)) {
-				try {
-					unlinkSync(lastMessageFile);
-				} catch {
-					// Ignore
-				}
+				try { unlinkSync(lastMessageFile); } catch { /* ignore */ }
 			}
 		}
 	}

@@ -222,10 +222,68 @@ export function parseStreamJsonResult(output: string): {
 	return { response: response || "Task completed", inputTokens, outputTokens };
 }
 
+const ANSI_ESCAPE_PATTERN =
+	/\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+const CONTROL_CHAR_PATTERN = /[\u0000-\u0008\u000b-\u001a\u001c-\u001f\u007f-\u009f]/g;
+const DISPLAY_NOISE_PATTERNS = [
+	/^reading prompt from stdin\.\.\.$/i,
+	/^qgenie cli v[\d.]+/i,
+	/^qgenie agent v[\d.]+/i,
+	/^qgenie cli works best on linux\.$/i,
+	/^(>|\$)\s*qgenie(?:\.exe)?\s+agent\s+exec\b/i,
+	/^- windows \(powershell\) support is experimental/i,
+	/^- for best results, please use wsl/i,
+	/^-{3,}$/i,
+	/^(workdir|model|provider|approval|sandbox|reasoning effort|reasoning summaries|session id):/i,
+	/^user$/i,
+	/\bcodex_core::tools::router\b/i,
+	/^warning: failed to clean up stale arg0 temp dirs:/i,
+	/^warning: proceeding, even though we could not update path:/i,
+	/^set-psreadlineoption:/i,
+	/^line \|$/i,
+	/^\d+\s+\|\s+set-psreadlineoption\b/i,
+	/^\|\s+~+/i,
+	/^the predictive suggestion feature cannot be enabled\b/i,
+	/^processing or it'?s redirected\.$/i,
+	/^fatal: not a git repository \(or any of the parent directories\): \.git$/i,
+	/^output:$/i,
+	/^wall time:/i,
+];
+const CODEX_ROUTER_NOISE_PATTERN = /\bcodex_core::tools::router\b/i;
+
+export function stripAnsiControlSequences(value: string): string {
+	return value.replace(ANSI_ESCAPE_PATTERN, "").replace(CONTROL_CHAR_PATTERN, "");
+}
+
+export function sanitizeDisplayLine(line: string): string | null {
+	const stripped = stripAnsiControlSequences(line).replace(/\r/g, "").trim();
+	if (!stripped) {
+		return null;
+	}
+
+	if (DISPLAY_NOISE_PATTERNS.some((pattern) => pattern.test(stripped))) {
+		return null;
+	}
+
+	return stripped;
+}
+
+function sanitizeDisplayBlock(output: string): string[] {
+	const lines: string[] = [];
+
+	for (const line of output.split(/\r?\n/)) {
+		const sanitized = sanitizeDisplayLine(line);
+		if (sanitized) {
+			lines.push(sanitized);
+		}
+	}
+
+	return lines;
+}
+
 function normalizeDisplayText(value: unknown): string[] {
 	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed ? [trimmed] : [];
+		return sanitizeDisplayBlock(value);
 	}
 
 	if (Array.isArray(value)) {
@@ -261,6 +319,123 @@ function normalizeDisplayText(value: unknown): string[] {
 	}
 
 	return [];
+}
+
+function collectCodexStyleText(value: unknown): string[] {
+	if (typeof value === "string") {
+		return sanitizeDisplayBlock(value);
+	}
+
+	if (Array.isArray(value)) {
+		return value.flatMap((item) => collectCodexStyleText(item));
+	}
+
+	if (!value || typeof value !== "object") {
+		return [];
+	}
+
+	const record = value as Record<string, unknown>;
+
+	if (typeof record.text === "string") {
+		return collectCodexStyleText(record.text);
+	}
+
+	return [record.message, record.error, record.result, record.content].flatMap((item) =>
+		collectCodexStyleText(item),
+	);
+}
+
+export function extractCodexLikeError(output: string): string | null {
+	const lines = output.split("\n").filter(Boolean);
+
+	for (const line of lines) {
+		try {
+			const parsed = JSON.parse(line) as Record<string, unknown>;
+			const isErrorLine =
+				parsed.type === "error" ||
+				parsed.is_error === true ||
+				(typeof parsed.error === "string" && parsed.error.length > 0);
+
+			if (!isErrorLine) {
+				continue;
+			}
+
+			const messages = [parsed.message, parsed.error, parsed.result]
+				.flatMap((item) => collectCodexStyleText(item))
+				.filter(Boolean);
+			if (messages.length > 0) {
+				return messages.join("\n");
+			}
+
+			return "Unknown error";
+		} catch {
+			// Ignore non-JSON lines
+		}
+	}
+
+	return null;
+}
+
+export function extractLatestCodexAgentMessage(output: string): string {
+	const lines = output.split("\n").filter(Boolean);
+	let latestMessage = "";
+
+	for (const line of lines) {
+		try {
+			const parsed = JSON.parse(line) as Record<string, unknown>;
+			const item = (parsed.item ?? {}) as Record<string, unknown>;
+			if (item.type === "agent_message" && typeof item.text === "string") {
+				const messageLines = sanitizeDisplayBlock(item.text);
+				if (messageLines.length > 0) {
+					latestMessage = messageLines.join("\n");
+				}
+			}
+		} catch {
+			// Ignore non-JSON lines
+		}
+	}
+
+	return latestMessage || "Task completed";
+}
+
+export function extractDisplayLinesFromCodexEventLine(line: string): string[] | null {
+	const trimmed = line.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	try {
+		const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+		const item = (parsed.item ?? {}) as Record<string, unknown>;
+		const itemType = item.type as string | undefined;
+
+		if (itemType === "reasoning" && typeof item.text === "string") {
+			const reasoningLines = sanitizeDisplayBlock(item.text);
+			return reasoningLines.length > 0 ? reasoningLines : null;
+		}
+
+		if (itemType === "agent_message" && typeof item.text === "string") {
+			const messageLines = sanitizeDisplayBlock(item.text);
+			return messageLines.length > 0 ? messageLines : null;
+		}
+
+		if (parsed.type === "error") {
+			const errorLines = [parsed.message, parsed.error, parsed.result]
+				.flatMap((value) => collectCodexStyleText(value))
+				.filter((value) => !CODEX_ROUTER_NOISE_PATTERN.test(value));
+
+			if (errorLines.length === 0) {
+				return null;
+			}
+
+			return [`[error] ${errorLines.join(" | ").slice(0, 240)}`];
+		}
+
+		return null;
+	} catch {
+		const fallback = sanitizeDisplayLine(line);
+		return fallback ? [fallback] : null;
+	}
 }
 
 /**
@@ -303,7 +478,8 @@ export function extractDisplayLinesFromStreamJsonLine(line: string): string[] | 
 
 		return null;
 	} catch {
-		return [line];
+		const fallback = sanitizeDisplayLine(line);
+		return fallback ? [fallback] : null;
 	}
 }
 
