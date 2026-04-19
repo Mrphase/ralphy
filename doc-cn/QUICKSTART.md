@@ -5,6 +5,7 @@
 1. Ralphy 的基本使用流程
 2. PRD 模式怎么驱动任务执行
 3. 知识继承怎么和 `AGENTS.md` / `progress.md` 配合
+如果你需要更完整的版本，包括：初始化后的完整流程、`PRD.md` / `prd.yml` 的写法、各类 flag 作用、`.ralphy/config.yaml` 与 `.ralphy/AGENTS.md` 的职责分工、以及“为什么第一次容易跑偏”的排查思路，请继续看 [`WORKFLOW_GUIDE.md`](./WORKFLOW_GUIDE.md)。
 
 如果你已经把仓库放在 `E:\Ecode\ralphy`，并且 `codex` / `codex cli` 可用，可以直接从这里开始。
 

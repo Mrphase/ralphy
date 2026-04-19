@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setVerbose } from "../ui/logger.ts";
@@ -9,7 +9,7 @@ import { QGenieEngine } from "./qgenie.ts";
 describe("QGenieEngine", () => {
 	let engine: QGenieEngine;
 	const testWorkDir = join(tmpdir(), "qgenie-test");
-	const ansiEscapePattern = /\u001b\[[0-9;]*m/g;
+	const ansiEscapePattern = /\\x1b\[[0-9;]*m/g;
 	const originalInvocation = process.env.RALPHY_INVOCATION;
 	const noisyQGenieStderr = [
 		"\u001b[90mQGenie CLI v1.2.3\u001b[0m",
@@ -47,7 +47,7 @@ describe("QGenieEngine", () => {
 	afterEach(() => {
 		setVerbose(false);
 		if (originalInvocation === undefined) {
-			delete process.env.RALPHY_INVOCATION;
+			process.env.RALPHY_INVOCATION = undefined;
 		} else {
 			process.env.RALPHY_INVOCATION = originalInvocation;
 		}
@@ -75,9 +75,14 @@ describe("QGenieEngine", () => {
 		expect(capturedArgs).toContain("--model");
 		const modelIndex = capturedArgs.indexOf("--model");
 		expect(capturedArgs[modelIndex + 1]).toBe("azure::gpt-5.4");
-		expect(capturedArgs).toContain("-c");
-		const configIndex = capturedArgs.indexOf("-c");
-		expect(capturedArgs[configIndex + 1]).toBe('model_reasoning_effort="xhigh"');
+		expect(capturedArgs).toEqual(
+			expect.arrayContaining([
+				"-c",
+				'model_reasoning_effort="xhigh"',
+				"-c",
+				"model_context_window=1000000",
+			]),
+		);
 
 		spy.mockRestore();
 	});
@@ -102,9 +107,14 @@ describe("QGenieEngine", () => {
 		});
 
 		expect(capturedArgs).toContain("--model");
-		expect(capturedArgs).toContain("-c");
-		const configIndex = capturedArgs.indexOf("-c");
-		expect(capturedArgs[configIndex + 1]).toBe('model_reasoning_effort="xhigh"');
+		expect(capturedArgs).toEqual(
+			expect.arrayContaining([
+				"-c",
+				'model_reasoning_effort="xhigh"',
+				"-c",
+				"model_context_window=1000000",
+			]),
+		);
 
 		spy.mockRestore();
 	});
@@ -128,11 +138,134 @@ describe("QGenieEngine", () => {
 			engineArgs: ["-c", 'model_reasoning_effort="low"'],
 		});
 
-		expect(capturedArgs.filter((arg) => arg === "-c")).toHaveLength(1);
-		const configIndex = capturedArgs.indexOf("-c");
-		expect(capturedArgs[configIndex + 1]).toBe('model_reasoning_effort="low"');
+		expect(capturedArgs.filter((arg) => arg === "-c")).toHaveLength(2);
+		expect(capturedArgs).toContain('model_reasoning_effort="low"');
+		expect(capturedArgs).toContain("model_context_window=1000000");
 
 		spy.mockRestore();
+	});
+
+	it("does not inject context window config when engine args already override it", async () => {
+		let capturedArgs: string[] = [];
+
+		const spy = spyOn(baseModule, "execCommand").mockImplementation(
+			async (_cmd: string, args: string[]) => {
+				capturedArgs = args;
+				return {
+					stdout: "Task completed",
+					stderr: "",
+					exitCode: 0,
+				};
+			},
+		);
+
+		await engine.execute("test", testWorkDir, {
+			engineArgs: ["-c", "model_context_window=524288"],
+		});
+
+		expect(capturedArgs.filter((arg) => arg === "-c")).toHaveLength(2);
+		expect(capturedArgs).toContain('model_reasoning_effort="xhigh"');
+		expect(capturedArgs).toContain("model_context_window=524288");
+		expect(capturedArgs).not.toContain("model_context_window=1000000");
+
+		spy.mockRestore();
+	});
+
+	it("falls back to the next QGenie model when the initial model fails before producing a response", async () => {
+		const capturedModels: string[] = [];
+
+		const spy = spyOn(baseModule, "execCommand").mockImplementation(
+			async (_cmd: string, args: string[]) => {
+				const modelIndex = args.indexOf("--model");
+				capturedModels.push(args[modelIndex + 1]);
+
+				if (capturedModels.length === 1) {
+					return {
+						stdout: "",
+						stderr: "provider unavailable for selected model",
+						exitCode: 1,
+					};
+				}
+
+				return {
+					stdout: JSON.stringify({
+						type: "item.completed",
+						item: {
+							type: "agent_message",
+							text: "Fallback model answered",
+						},
+					}),
+					stderr: "",
+					exitCode: 0,
+				};
+			},
+		);
+
+		try {
+			const result = await engine.execute("test", testWorkDir);
+
+			expect(result.success).toBe(true);
+			expect(result.response).toBe("Fallback model answered");
+			expect(capturedModels).toEqual(["azure::gpt-5.4", "azure::gpt-5.3-codex"]);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("falls back during streaming execution and keeps default QGenie configs on the next model", async () => {
+		const capturedArgs: string[][] = [];
+		const onProgressCalls: string[] = [];
+
+		const spy = spyOn(baseModule, "execCommandStreaming").mockImplementation(
+			async (_cmd, args, _cwd, onLine) => {
+				capturedArgs.push(args);
+
+				if (capturedArgs.length === 1) {
+					onLine(JSON.stringify({ type: "error", error: "model unavailable" }), "stderr");
+					return { exitCode: 1 };
+				}
+
+				onLine(
+					JSON.stringify({
+						type: "item.updated",
+						item: {
+							type: "reasoning",
+							text: "Thinking through fallback...",
+						},
+					}),
+					"stdout",
+				);
+				onLine(
+					JSON.stringify({
+						type: "item.completed",
+						item: {
+							type: "agent_message",
+							text: "Streaming fallback model answered",
+						},
+					}),
+					"stdout",
+				);
+				return { exitCode: 0 };
+			},
+		);
+
+		try {
+			const result = await engine.executeStreaming?.("test", testWorkDir, (step) => {
+				onProgressCalls.push(step);
+			});
+
+			expect(result?.success).toBe(true);
+			expect(result?.response).toBe("Streaming fallback model answered");
+			expect(onProgressCalls).toContain("Switching model");
+			expect(onProgressCalls).toContain("Thinking");
+			expect(capturedArgs).toHaveLength(2);
+			expect(capturedArgs[0]).toContain("azure::gpt-5.4");
+			expect(capturedArgs[1]).toContain("azure::gpt-5.3-codex");
+			expect(capturedArgs[1]).toContain('model_reasoning_effort="xhigh"');
+			expect(capturedArgs[1]).toContain("model_context_window=1000000");
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	it("filters stderr down to concise thinking and message lines", async () => {

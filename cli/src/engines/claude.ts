@@ -1,3 +1,5 @@
+import { logDebug, logVerboseOutputLine, logWarn } from "../ui/logger.ts";
+import { type SessionLogWriter, getOrCreateSessionLog } from "../ui/session-log.ts";
 import {
 	BaseAIEngine,
 	checkForErrors,
@@ -9,10 +11,46 @@ import {
 	parseStreamJsonResult,
 } from "./base.ts";
 import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
-import { logDebug, logVerboseOutputLine } from "../ui/logger.ts";
-import { getOrCreateSessionLog, type SessionLogWriter } from "../ui/session-log.ts";
 
 const isWindows = process.platform === "win32";
+const DEFAULT_CLAUDE_MODEL = "claude-opus-4-7[1m]";
+const CLAUDE_FALLBACK_MODELS = [
+	DEFAULT_CLAUDE_MODEL,
+	"claude-opus-4-7",
+	"claude-opus-4-6[1m]",
+	"claude-opus-4-6",
+	"claude-sonnet-4-6[1m]",
+	"claude-sonnet-4-6",
+] as const;
+const CLAUDE_NON_FALLBACK_ERROR_PATTERNS = [
+	/invalid api key/i,
+	/authentication/i,
+	/not authenticated/i,
+	/unauthorized/i,
+	/please login/i,
+	/spawn error/i,
+	/command not found/i,
+	/is not recognized as an internal or external command/i,
+	/enoent/i,
+];
+const CLAUDE_FALLBACK_ERROR_PATTERNS = [
+	/\bmodel\b/i,
+	/unsupported/i,
+	/unavailable/i,
+	/overloaded/i,
+	/rate limit/i,
+	/\b429\b/i,
+	/\b5\d\d\b/i,
+	/context window/i,
+	/timeout/i,
+	/timed out/i,
+	/connection/i,
+	/network/i,
+	/internal server error/i,
+	/service unavailable/i,
+	/forbidden/i,
+	/access denied/i,
+];
 
 /**
  * Claude Code AI Engine
@@ -22,14 +60,97 @@ export class ClaudeEngine extends BaseAIEngine {
 	cliCommand = "claude";
 
 	private getLogModelName(options?: EngineOptions): string {
-		return options?.modelOverride || "claude";
+		return options?.modelOverride || DEFAULT_CLAUDE_MODEL;
 	}
 
-	private logExecutionContext(prompt: string, workDir: string, args: string[], options?: EngineOptions): void {
+	private getCandidateModels(options?: EngineOptions): string[] {
+		const preferredModel = options?.modelOverride || DEFAULT_CLAUDE_MODEL;
+		return Array.from(new Set([preferredModel, ...CLAUDE_FALLBACK_MODELS]));
+	}
+
+	private buildAttemptOptions(
+		options: EngineOptions | undefined,
+		modelOverride: string,
+	): EngineOptions {
+		return {
+			...(options || {}),
+			modelOverride,
+		};
+	}
+
+	private summarizeError(error: string): string {
+		const lines = error
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter(Boolean)
+			.filter(
+				(line) => !/^Command failed with exit code \d+\.?/i.test(line) && !/^Output:$/i.test(line),
+			);
+
+		return lines.at(-1) || lines[0] || "Unknown error";
+	}
+
+	private shouldFallbackToNextModel(result: AIResult, nextModel?: string): boolean {
+		if (result.success || !nextModel || !result.error) {
+			return false;
+		}
+
+		if (CLAUDE_NON_FALLBACK_ERROR_PATTERNS.some((pattern) => pattern.test(result.error || ""))) {
+			return false;
+		}
+
+		if (!result.response.trim()) {
+			return true;
+		}
+
+		return CLAUDE_FALLBACK_ERROR_PATTERNS.some((pattern) => pattern.test(result.error || ""));
+	}
+
+	private logModelFallback(
+		failedModel: string,
+		nextModel: string,
+		error: string,
+		sessionLog?: SessionLogWriter,
+	): void {
+		const summary = this.summarizeError(error);
+		const message = `[Claude] Model fallback: ${failedModel} -> ${nextModel} (${summary})`;
+		logWarn(message);
+		sessionLog?.append(message);
+	}
+
+	private buildArgs(
+		prompt: string,
+		options?: EngineOptions,
+	): { args: string[]; stdinContent?: string } {
+		const args = ["--dangerously-skip-permissions", "--verbose", "--output-format", "stream-json"];
+		const model = options?.modelOverride || DEFAULT_CLAUDE_MODEL;
+
+		args.push("--model", model);
+		if (options?.engineArgs && options.engineArgs.length > 0) {
+			args.push(...options.engineArgs);
+		}
+
+		let stdinContent: string | undefined;
+		if (isWindows) {
+			args.push("-p");
+			stdinContent = prompt;
+		} else {
+			args.push("-p", prompt);
+		}
+
+		return { args, stdinContent };
+	}
+
+	private logExecutionContext(
+		prompt: string,
+		workDir: string,
+		args: string[],
+		options?: EngineOptions,
+	): void {
 		logDebug(`[Claude] Working directory: ${workDir}`);
 		logDebug(`[Claude] Prompt length: ${prompt.length} chars`);
 		logDebug(`[Claude] Prompt preview: ${prompt.substring(0, 200)}...`);
-		logDebug(`[Claude] Model: ${options?.modelOverride || "(default)"}`);
+		logDebug(`[Claude] Model: ${options?.modelOverride || DEFAULT_CLAUDE_MODEL}`);
 		logDebug(
 			`[Claude] Extra engine args: ${options?.engineArgs?.length ? options.engineArgs.join(" ") : "(none)"}`,
 		);
@@ -65,75 +186,75 @@ export class ClaudeEngine extends BaseAIEngine {
 	}
 
 	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
-		const args = ["--dangerously-skip-permissions", "--verbose", "--output-format", "stream-json"];
-		if (options?.modelOverride) {
-			args.push("--model", options.modelOverride);
-		}
-		// Add any additional engine-specific arguments
-		if (options?.engineArgs && options.engineArgs.length > 0) {
-			args.push(...options.engineArgs);
-		}
-
-		// On Windows, pass prompt via stdin to avoid cmd.exe argument parsing issues with multi-line content
-		// On other platforms, pass as argument for compatibility
-		let stdinContent: string | undefined;
-		if (isWindows) {
-			args.push("-p"); // Enable print mode, prompt comes from stdin
-			stdinContent = prompt;
-		} else {
-			args.push("-p", prompt);
-		}
-
-		this.logExecutionContext(prompt, workDir, args, options);
 		const sessionLog = getOrCreateSessionLog({
 			workDir,
 			modelName: this.getLogModelName(options),
 		});
+		const candidateModels = this.getCandidateModels(options);
+		let lastResult: AIResult | null = null;
 
-		const { stdout, stderr, exitCode } = await execCommand(
-			this.cliCommand,
-			args,
-			workDir,
-			undefined,
-			stdinContent,
-		);
+		for (const [attemptIndex, model] of candidateModels.entries()) {
+			const attemptOptions = this.buildAttemptOptions(options, model);
+			const { args, stdinContent } = this.buildArgs(prompt, attemptOptions);
 
-		this.logCapturedOutput(stdout, "stdout", sessionLog);
-		this.logCapturedOutput(stderr, "stderr", sessionLog);
+			this.logExecutionContext(prompt, workDir, args, attemptOptions);
 
-		const output = stdout + stderr;
+			const { stdout, stderr, exitCode } = await execCommand(
+				this.cliCommand,
+				args,
+				workDir,
+				undefined,
+				stdinContent,
+			);
 
-		// Check for errors
-		const error = checkForErrors(output);
-		if (error) {
-			return {
-				success: false,
-				response: "",
-				inputTokens: 0,
-				outputTokens: 0,
-				error,
-			};
-		}
+			this.logCapturedOutput(stdout, "stdout", sessionLog);
+			this.logCapturedOutput(stderr, "stderr", sessionLog);
 
-		// Parse result
-		const { response, inputTokens, outputTokens } = parseStreamJsonResult(output);
+			const output = stdout + stderr;
+			const error = checkForErrors(output);
+			const result = error
+				? {
+						success: false,
+						response: "",
+						inputTokens: 0,
+						outputTokens: 0,
+						error,
+					}
+				: ((() => {
+						const { response, inputTokens, outputTokens } = parseStreamJsonResult(output);
+						if (exitCode !== 0) {
+							return {
+								success: false,
+								response,
+								inputTokens,
+								outputTokens,
+								error: formatCommandError(exitCode, output),
+							};
+						}
 
-		// If command failed with non-zero exit code, provide a meaningful error
-		if (exitCode !== 0) {
-			return {
-				success: false,
-				response,
-				inputTokens,
-				outputTokens,
-				error: formatCommandError(exitCode, output),
-			};
+						return {
+							success: true,
+							response,
+							inputTokens,
+							outputTokens,
+						};
+					}) satisfies AIResult);
+
+			const nextModel = candidateModels[attemptIndex + 1];
+			if (!this.shouldFallbackToNextModel(result, nextModel)) {
+				return result;
+			}
+
+			lastResult = result;
+			this.logModelFallback(model, nextModel, result.error || "", sessionLog);
 		}
 
 		return {
-			success: true,
-			response,
-			inputTokens,
-			outputTokens,
+			success: false,
+			response: lastResult?.response || "",
+			inputTokens: lastResult?.inputTokens || 0,
+			outputTokens: lastResult?.outputTokens || 0,
+			error: lastResult?.error || "Claude exhausted all configured fallback models.",
 		};
 	}
 
@@ -143,84 +264,83 @@ export class ClaudeEngine extends BaseAIEngine {
 		onProgress: ProgressCallback,
 		options?: EngineOptions,
 	): Promise<AIResult> {
-		const args = ["--dangerously-skip-permissions", "--verbose", "--output-format", "stream-json"];
-		if (options?.modelOverride) {
-			args.push("--model", options.modelOverride);
-		}
-		// Add any additional engine-specific arguments
-		if (options?.engineArgs && options.engineArgs.length > 0) {
-			args.push(...options.engineArgs);
-		}
-
-		// On Windows, pass prompt via stdin to avoid cmd.exe argument parsing issues with multi-line content
-		// On other platforms, pass as argument for compatibility
-		let stdinContent: string | undefined;
-		if (isWindows) {
-			args.push("-p"); // Enable print mode, prompt comes from stdin
-			stdinContent = prompt;
-		} else {
-			args.push("-p", prompt);
-		}
-
-		this.logExecutionContext(prompt, workDir, args, options);
 		const sessionLog = getOrCreateSessionLog({
 			workDir,
 			modelName: this.getLogModelName(options),
 		});
+		const candidateModels = this.getCandidateModels(options);
+		let lastResult: AIResult | null = null;
 
-		const outputLines: string[] = [];
+		for (const [attemptIndex, model] of candidateModels.entries()) {
+			const attemptOptions = this.buildAttemptOptions(options, model);
+			const { args, stdinContent } = this.buildArgs(prompt, attemptOptions);
+			const outputLines: string[] = [];
 
-		const { exitCode } = await execCommandStreaming(
-			this.cliCommand,
-			args,
-			workDir,
-			(line, stream) => {
-				outputLines.push(line);
-				this.logOutputLine(line, stream, sessionLog);
+			this.logExecutionContext(prompt, workDir, args, attemptOptions);
 
-				// Detect and report step changes
-				const step = detectStepFromOutput(line);
-				if (step) {
-					onProgress(step);
-				}
-			},
-			undefined,
-			stdinContent,
-		);
+			const { exitCode } = await execCommandStreaming(
+				this.cliCommand,
+				args,
+				workDir,
+				(line, stream) => {
+					outputLines.push(line);
+					this.logOutputLine(line, stream, sessionLog);
 
-		const output = outputLines.join("\n");
+					const step = detectStepFromOutput(line);
+					if (step) {
+						onProgress(step);
+					}
+				},
+				undefined,
+				stdinContent,
+			);
 
-		// Check for errors
-		const error = checkForErrors(output);
-		if (error) {
-			return {
-				success: false,
-				response: "",
-				inputTokens: 0,
-				outputTokens: 0,
-				error,
-			};
-		}
+			const output = outputLines.join("\n");
+			const error = checkForErrors(output);
+			const result = error
+				? {
+						success: false,
+						response: "",
+						inputTokens: 0,
+						outputTokens: 0,
+						error,
+					}
+				: ((() => {
+						const { response, inputTokens, outputTokens } = parseStreamJsonResult(output);
+						if (exitCode !== 0) {
+							return {
+								success: false,
+								response,
+								inputTokens,
+								outputTokens,
+								error: formatCommandError(exitCode, output),
+							};
+						}
 
-		// Parse result
-		const { response, inputTokens, outputTokens } = parseStreamJsonResult(output);
+						return {
+							success: true,
+							response,
+							inputTokens,
+							outputTokens,
+						};
+					}) satisfies AIResult);
 
-		// If command failed with non-zero exit code, provide a meaningful error
-		if (exitCode !== 0) {
-			return {
-				success: false,
-				response,
-				inputTokens,
-				outputTokens,
-				error: formatCommandError(exitCode, output),
-			};
+			const nextModel = candidateModels[attemptIndex + 1];
+			if (!this.shouldFallbackToNextModel(result, nextModel)) {
+				return result;
+			}
+
+			lastResult = result;
+			onProgress("Switching model");
+			this.logModelFallback(model, nextModel, result.error || "", sessionLog);
 		}
 
 		return {
-			success: true,
-			response,
-			inputTokens,
-			outputTokens,
+			success: false,
+			response: lastResult?.response || "",
+			inputTokens: lastResult?.inputTokens || 0,
+			outputTokens: lastResult?.outputTokens || 0,
+			error: lastResult?.error || "Claude exhausted all configured fallback models.",
 		};
 	}
 }

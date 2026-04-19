@@ -81,6 +81,18 @@ WSL local-clone quickstart:
 
 Both versions have identical features. Examples below use `ralphy` (npm) - substitute `./ralphy.sh` on macOS/Linux, `.\ralphy.ps1` / `ralphy.cmd` on Windows local clones, or `./ralphy-wsl.sh` on WSL local clones.
 
+## Docs
+
+- Chinese quickstart: [`doc-cn/QUICKSTART.md`](./doc-cn/QUICKSTART.md)
+- Chinese complete workflow guide: [`doc-cn/WORKFLOW_GUIDE.md`](./doc-cn/WORKFLOW_GUIDE.md)
+- PRD template: [`doc-cn/PRD_TEMPLATE.md`](./doc-cn/PRD_TEMPLATE.md)
+- Markdown PRD example: [`example-prd.md`](./example-prd.md)
+- YAML PRD example: [`example-prd.yaml`](./example-prd.yaml)
+- Windows local-clone setup: [`WINDOWS_CODEX_SETUP.md`](./WINDOWS_CODEX_SETUP.md)
+- WSL local-clone setup: [`WSL_CODEX_SETUP.md`](./WSL_CODEX_SETUP.md)
+
+If the agent does not work well on the first run, start with `ralphy --init`, fill in `.ralphy/config.yaml`, add project-specific rules to `.ralphy/AGENTS.md`, then run one micro-task before moving to a full PRD.
+
 ## Two Modes
 
 **Single task** - just tell it what to do:
