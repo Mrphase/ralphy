@@ -23,6 +23,7 @@ npm install -g ralphy-cli
 # Then use anywhere
 ralphy "add login button"
 ralphy --prd PRD.md
+ralphy --yaml tasks.yaml
 ```
 
 **Option B: Clone**
@@ -32,6 +33,7 @@ cd ralphy && chmod +x ralphy.sh
 
 ./ralphy.sh "add login button"
 ./ralphy.sh --prd PRD.md
+./ralphy.sh --yaml tasks.yaml
 ```
 
 **Option C: Windows local clone**
@@ -44,6 +46,7 @@ cd ..
 .\ralphy.ps1 --help
 .\ralphy.ps1 --codex "add login button"
 .\ralphy.ps1 --codex --prd .\example-prd.md --no-commit
+.\ralphy.ps1 --codex --yaml .\example-prd.yaml --no-commit
 cmd /c ralphy.cmd --codex "summarize this repository"
 ```
 
@@ -53,7 +56,8 @@ Windows local-clone quickstart:
 - CMD entry: `cmd /c ralphy.cmd`
 - Dependencies for local-clone mode: Node.js 18+, npm, Codex CLI
 - Single-task mode: `.\ralphy.ps1 --codex "add login button"`
-- PRD mode: `.\ralphy.ps1 --codex --prd .\example-prd.md --no-commit`
+- Markdown PRD mode: `.\ralphy.ps1 --codex --prd .\example-prd.md --no-commit`
+- YAML task mode: `.\ralphy.ps1 --codex --yaml .\example-prd.yaml --no-commit`
 - Troubleshooting and full setup: [WINDOWS_CODEX_SETUP.md](./WINDOWS_CODEX_SETUP.md)
 
 **Option D: WSL local clone**
@@ -67,6 +71,7 @@ cd ..
 ./ralphy-wsl.sh --help
 ./ralphy-wsl.sh --codex "add login button"
 ./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit
+./ralphy-wsl.sh --codex --yaml ./example-prd.yaml --no-commit
 ```
 
 WSL local-clone quickstart:
@@ -75,7 +80,8 @@ WSL local-clone quickstart:
 - Setup helper: `./wsl_setup_codex.sh`
 - Dependencies for local-clone mode: Linux `node`, Linux `npm`, Codex CLI in WSL
 - Single-task mode: `./ralphy-wsl.sh --codex "add login button"`
-- PRD mode: `./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit`
+- Markdown PRD mode: `./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit`
+- YAML task mode: `./ralphy-wsl.sh --codex --yaml ./example-prd.yaml --no-commit`
 - Full setup and troubleshooting: [WSL_CODEX_SETUP.md](./WSL_CODEX_SETUP.md)
 - Knowledge-transfer walkthrough: [KNOWLEDGE_TRANSFER_GUIDE.md](./KNOWLEDGE_TRANSFER_GUIDE.md)
 
@@ -93,7 +99,7 @@ Both versions have identical features. Examples below use `ralphy` (npm) - subst
 
 If the agent does not work well on the first run, start with `ralphy --init`, fill in `.ralphy/config.yaml`, add project-specific rules to `.ralphy/AGENTS.md`, then run one micro-task before moving to a full PRD.
 
-## Two Modes
+## Task Modes
 
 **Single task** - just tell it what to do:
 ```bash
@@ -105,7 +111,10 @@ ralphy "fix the auth bug"
 ```bash
 ralphy              # uses PRD.md
 ralphy --prd tasks.md
+ralphy --yaml tasks.yaml
 ```
+
+Use `--prd` for Markdown files or folders only. Use `--yaml` for `.yaml` / `.yml` task files.
 
 ## Project Config
 
@@ -231,6 +240,8 @@ ralphy --codex --no-usage-limit-resume "fix the auth bug"
 
 ## Task Sources
 
+> Warning: `--prd` is for Markdown files and Markdown folders. If your task file ends with `.yaml` or `.yml`, run it with `--yaml`, not `--prd`.
+
 **Markdown file** (default):
 ```bash
 ralphy --prd PRD.md
@@ -284,6 +295,8 @@ ralphy --json PRD.json
 }
 ```
 Titles must be unique.
+
+If you accidentally run `ralphy --prd tasks.yaml`, the current CLI will treat that file as Markdown, find no checkbox tasks, and may print `No tasks remaining. All done!`. Re-run the same file with `--yaml`.
 
 **GitHub Issues**:
 ```bash
@@ -405,8 +418,8 @@ ralphy --parallel --sandbox
 
 | Flag | What it does |
 |------|--------------|
-| `--prd PATH` | task file or folder (auto-detected, default: PRD.md) |
-| `--yaml FILE` | YAML task file |
+| `--prd PATH` | Markdown task file or folder (default: PRD.md; do not pass `.yaml` / `.yml` here) |
+| `--yaml FILE` | YAML task file (`.yaml` or `.yml`) |
 | `--json FILE` | JSON task file |
 | `--github REPO` | use GitHub issues |
 | `--github-label TAG` | filter issues by label |

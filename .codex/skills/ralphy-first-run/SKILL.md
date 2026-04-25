@@ -90,6 +90,8 @@ Use `prd.yml` when:
 - You want `description`
 - You want `parallel_group`
 
+Never pass `.yaml` or `.yml` files to `--prd`. YAML task files must be launched with `--yaml`.
+
 ## Authoring Rules
 
 ### Good `PRD.md` tasks
@@ -147,6 +149,8 @@ ralphy --codex --prd ./PRD.md --no-commit
 ```bash
 ralphy --qgenie --yaml ./prd.yml --no-commit -v
 ```
+
+Do not run `ralphy --prd ./prd.yml`. The current CLI will treat that as Markdown and may report that no tasks remain.
 
 ### Debugging setup quality
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseArgs } from "./args.ts";
+import { createProgram, parseArgs } from "./args.ts";
 
 describe("parseArgs", () => {
 	it("enables usage-limit auto-resume by default", () => {
@@ -73,5 +73,12 @@ describe("parseArgs", () => {
 
 		expect(result.knowledgeCommand).toBeUndefined();
 		expect(result.task).toBe("fix auth bug");
+	});
+
+	it("documents yaml task files separately in help output", () => {
+		const helpText = createProgram().helpInformation();
+
+		expect(helpText).toContain("Markdown PRD file or folder (use --yaml for .yaml/.yml)");
+		expect(helpText).toContain("YAML task file (.yaml or .yml)");
 	});
 });

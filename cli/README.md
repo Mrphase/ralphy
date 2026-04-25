@@ -16,9 +16,10 @@ npm install -g ralphy-cli
 # Then use anywhere
 ralphy "add login button"
 ralphy --prd PRD.md
+ralphy --yaml tasks.yaml
 ```
 
-## Two Modes
+## Task Modes
 
 **Single task** - just tell it what to do:
 ```bash
@@ -30,7 +31,10 @@ ralphy "fix the auth bug"
 ```bash
 ralphy              # uses PRD.md
 ralphy --prd tasks.md
+ralphy --yaml tasks.yaml
 ```
+
+Use `--prd` for Markdown files or folders only. Use `--yaml` for `.yaml` / `.yml` task files.
 
 ## Project Config
 
@@ -122,6 +126,8 @@ ralphy --codex --no-usage-limit-resume "fix the auth bug"
 
 ## Task Sources
 
+> Warning: `--prd` is for Markdown files and Markdown folders. If your task file ends with `.yaml` or `.yml`, run it with `--yaml`, not `--prd`.
+
 **Markdown file** (default):
 ```bash
 ralphy --prd PRD.md
@@ -175,6 +181,8 @@ ralphy --json PRD.json
 }
 ```
 Titles must be unique.
+
+If you accidentally run `ralphy --prd tasks.yaml`, the current CLI will treat that file as Markdown, find no checkbox tasks, and may print `No tasks remaining. All done!`. Re-run the same file with `--yaml`.
 
 **GitHub Issues**:
 ```bash
@@ -296,8 +304,8 @@ ralphy --parallel --sandbox
 
 | Flag | What it does |
 |------|--------------|
-| `--prd PATH` | task file or folder (auto-detected, default: PRD.md) |
-| `--yaml FILE` | YAML task file |
+| `--prd PATH` | Markdown task file or folder (default: PRD.md; do not pass `.yaml` / `.yml` here) |
+| `--yaml FILE` | YAML task file (`.yaml` or `.yml`) |
 | `--json FILE` | JSON task file |
 | `--github REPO` | use GitHub issues |
 | `--github-label TAG` | filter issues by label |

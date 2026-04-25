@@ -185,11 +185,22 @@ After you have at least one learning entry in `.ralphy/progress.md`, the dry-run
 
 ## 10. Run PRD Mode
 
-Use the included example PRD:
+Use the included example PRDs.
+
+Use `--prd` for Markdown PRDs only. If the file ends with `.yaml` or `.yml`, run it with `--yaml`.
+
+Markdown example:
 
 ```bash
 cd /mnt/e/Ecode/ralphy
 ./ralphy-wsl.sh --codex --prd ./example-prd.md --no-commit
+```
+
+YAML example:
+
+```bash
+cd /mnt/e/Ecode/ralphy
+./ralphy-wsl.sh --codex --yaml ./example-prd.yaml --no-commit
 ```
 
 ## 11. Why WSL Uses `ralphy-wsl.sh`

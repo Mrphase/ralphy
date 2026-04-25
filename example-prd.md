@@ -3,6 +3,8 @@
 This is an example PRD (Product Requirements Document) in Markdown format.
 Ralphy will execute each unchecked task sequentially using your chosen AI engine.
 
+This file is Markdown-only. If you want structured YAML tasks or `parallel_group`, use `example-prd.yaml` with `ralphy --yaml example-prd.yaml`.
+
 ## Best Practice: Micro-Tasks
 
 Break large tasks into micro-tasks. Smaller tasks = better code quality.
@@ -76,6 +78,9 @@ ralphy
 
 # Or explicitly specify the file
 ralphy --prd example-prd.md
+
+# YAML files use a different flag
+ralphy --yaml example-prd.yaml
 ```
 
 ## Notes

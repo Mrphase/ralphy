@@ -15,10 +15,15 @@ import {
 	logError,
 	logInfo,
 	logSuccess,
+	logWarn,
 	setVerbose,
 } from "../../ui/logger.ts";
 import { notifyAllComplete } from "../../ui/notify.ts";
 import { buildActiveSettings } from "../../ui/settings.ts";
+
+function isYamlTaskFilePath(filePath: string): boolean {
+	return /\.ya?ml$/i.test(filePath);
+}
 
 /**
  * Run the PRD loop (multiple tasks from file/GitHub)
@@ -77,6 +82,11 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 	// Check if there are tasks
 	const remaining = await taskSource.countRemaining();
 	if (remaining === 0) {
+		if (options.prdSource === "markdown" && isYamlTaskFilePath(options.prdFile)) {
+			logWarn(
+				`\"${options.prdFile}\" looks like a YAML task file. Re-run with --yaml ${options.prdFile} instead of --prd ${options.prdFile}.`,
+			);
+		}
 		logSuccess("No tasks remaining. All done!");
 		return;
 	}

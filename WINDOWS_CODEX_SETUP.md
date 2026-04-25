@@ -151,11 +151,22 @@ After you have at least one learning entry in `.ralphy\progress.md`, the dry-run
 
 ## 8. Run PRD Mode With Codex
 
-The repo already includes [`example-prd.md`](./example-prd.md).
+The repo already includes [`example-prd.md`](./example-prd.md) and [`example-prd.yaml`](./example-prd.yaml).
+
+Use `--prd` for Markdown PRDs only. If the file ends with `.yaml` or `.yml`, run it with `--yaml`.
+
+Markdown example:
 
 ```powershell
 cd E:\Ecode\ralphy
 .\ralphy.ps1 --codex --prd .\example-prd.md --no-commit
+```
+
+YAML example:
+
+```powershell
+cd E:\Ecode\ralphy
+.\ralphy.ps1 --codex --yaml .\example-prd.yaml --no-commit
 ```
 
 Ralphy will:
