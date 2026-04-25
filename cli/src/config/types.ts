@@ -127,6 +127,20 @@ export interface RuntimeOptions {
 	useSandbox?: boolean;
 	/** Additional arguments to pass to the engine CLI */
 	engineArgs?: string[];
+	/** Iterative optimization mode */
+	optimize: boolean;
+	/** Multi-agent competition mode */
+	compete: boolean;
+	/** Evaluation script command (required for --optimize/--compete) */
+	evaluateScript?: string;
+	/** Maximum optimization rounds */
+	optimizeMaxRounds: number;
+	/** Number of competing agents per round */
+	competeAgents: number;
+	/** Number of competition rounds */
+	competeRounds: number;
+	/** Metric objective direction */
+	metricObjective: "minimize" | "maximize" | "pass-fail";
 }
 
 /**
@@ -159,4 +173,10 @@ export const DEFAULT_OPTIONS: RuntimeOptions = {
 	knowledge: true,
 	knowledgeContext: 10,
 	knowledgeMaxChars: 8000,
+	optimize: false,
+	compete: false,
+	optimizeMaxRounds: 20,
+	competeAgents: 3,
+	competeRounds: 5,
+	metricObjective: "maximize",
 };

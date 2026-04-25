@@ -284,3 +284,225 @@ ${instructions.join("\n")}
 
 Focus only on implementing: ${task}`;
 }
+
+interface OptimizePromptOptions {
+	task: string;
+	round: number;
+	bestScore: number | null;
+	lastEvalOutput?: string;
+	scoreHistory: string;
+	workDir?: string;
+	skipTests?: boolean;
+	skipLint?: boolean;
+	browserEnabled?: "auto" | "true" | "false";
+	knowledge?: KnowledgeOptions;
+}
+
+/**
+ * Build a prompt for iterative optimization mode.
+ * Includes score history and evaluation feedback to guide the agent.
+ */
+export function buildOptimizePrompt(options: OptimizePromptOptions): string {
+	const {
+		task,
+		round,
+		bestScore,
+		lastEvalOutput,
+		scoreHistory,
+		workDir = process.cwd(),
+		skipTests = false,
+		skipLint = false,
+		browserEnabled = "auto",
+		knowledge,
+	} = options;
+
+	const parts: string[] = [];
+
+	// Knowledge context
+	if (knowledge?.enabled !== false) {
+		const knowledgeOpts = knowledge ?? DEFAULT_KNOWLEDGE_OPTIONS;
+		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
+		const knowledgeSection = formatKnowledgeForPrompt(ctx, knowledgeOpts);
+		if (knowledgeSection) {
+			parts.push(knowledgeSection);
+		}
+	}
+
+	// Project context
+	const context = loadProjectContext(workDir);
+	if (context) {
+		parts.push(`## Project Context\n${context}`);
+	}
+
+	// Rules
+	const rules = loadRules(workDir);
+	const codeChangeRules = [
+		"Keep changes focused and minimal. Do not refactor unrelated code.",
+		"Write concise code. Avoid over-engineering.",
+		"Don't leave dead code. Delete unused code completely.",
+		...rules,
+	];
+	parts.push(`## Rules (you MUST follow these)\n${codeChangeRules.map((r) => `- ${r}`).join("\n")}`);
+
+	// Boundaries
+	const userBoundaries = loadBoundaries(workDir);
+	const agentsBoundary = `.ralphy/${AGENTS_MD_FILE}`;
+	const systemBoundaries = [agentsBoundary, ".ralphy/progress.txt", ".ralphy/optimize-results.tsv"];
+	const allBoundaries = [...systemBoundaries, ...userBoundaries];
+	parts.push(`## Boundaries\nDo NOT modify these files:\n${allBoundaries.map((b) => `- ${b}`).join("\n")}`);
+
+	// Browser
+	if (isBrowserAvailable(browserEnabled)) {
+		parts.push(getBrowserInstructions());
+	}
+
+	// Optimization context
+	parts.push(`## Optimization Task (Round ${round})\n${task}`);
+
+	if (scoreHistory) {
+		parts.push(`## Score History\n\`\`\`\n${scoreHistory}\n\`\`\``);
+	}
+
+	if (bestScore !== null) {
+		parts.push(`## Current Best Score: ${bestScore.toFixed(6)}\nYour goal: improve upon this score. Try a different approach than previous rounds.`);
+	} else {
+		parts.push("## First Round\nThis is the baseline run. Implement the task and the evaluation script will measure performance.");
+	}
+
+	if (lastEvalOutput) {
+		parts.push(`## Last Evaluation Output\n\`\`\`\n${lastEvalOutput}\n\`\`\`\nUse this feedback to guide your next improvement.`);
+	}
+
+	// Instructions
+	const instructions = ["1. Analyze the current code and previous results"];
+	let step = 2;
+	instructions.push(`${step}. Make targeted changes to improve the score`);
+	step++;
+
+	if (!skipTests) {
+		instructions.push(`${step}. Run tests and ensure they pass`);
+		step++;
+	}
+	if (!skipLint) {
+		instructions.push(`${step}. Run linting and ensure it passes`);
+		step++;
+	}
+
+	instructions.push(`${step}. Ensure the code runs correctly — the evaluation script will be run automatically after you finish`);
+	step++;
+	instructions.push(`${step}. Do NOT run git commit; changes will be evaluated and committed automatically if improved`);
+
+	parts.push(`## Instructions\n${instructions.join("\n")}`);
+
+	return parts.join("\n\n");
+}
+
+interface CompetitionPromptOptions {
+	task: string;
+	round: number;
+	totalRounds: number;
+	agentNum: number;
+	totalAgents: number;
+	previousWinnerScore?: number;
+	previousWinnerDescription?: string;
+	scoreHistory?: string;
+	workDir?: string;
+	skipTests?: boolean;
+	skipLint?: boolean;
+	browserEnabled?: "auto" | "true" | "false";
+	knowledge?: KnowledgeOptions;
+}
+
+/**
+ * Build a prompt for multi-agent competition mode.
+ */
+export function buildCompetitionPrompt(options: CompetitionPromptOptions): string {
+	const {
+		task,
+		round,
+		totalRounds,
+		agentNum,
+		totalAgents,
+		previousWinnerScore,
+		previousWinnerDescription,
+		scoreHistory,
+		workDir = process.cwd(),
+		skipTests = false,
+		skipLint = false,
+		browserEnabled = "auto",
+		knowledge,
+	} = options;
+
+	const parts: string[] = [];
+
+	// Knowledge context
+	if (knowledge?.enabled !== false) {
+		const knowledgeOpts = knowledge ?? DEFAULT_KNOWLEDGE_OPTIONS;
+		const ctx = readKnowledgeContext(knowledgeOpts, workDir);
+		const knowledgeSection = formatKnowledgeForPrompt(ctx, knowledgeOpts);
+		if (knowledgeSection) {
+			parts.push(knowledgeSection);
+		}
+	}
+
+	// Project context
+	const context = loadProjectContext(workDir);
+	if (context) {
+		parts.push(`## Project Context\n${context}`);
+	}
+
+	// Rules
+	const rules = loadRules(workDir);
+	const codeChangeRules = [
+		"Keep changes focused and minimal. Do not refactor unrelated code.",
+		"Write concise code. Avoid over-engineering.",
+		"Don't leave dead code. Delete unused code completely.",
+		...rules,
+	];
+	parts.push(`## Rules (you MUST follow these)\n${codeChangeRules.map((r) => `- ${r}`).join("\n")}`);
+
+	// Boundaries
+	const userBoundaries = loadBoundaries(workDir);
+	const agentsBoundary = `.ralphy/${AGENTS_MD_FILE}`;
+	const systemBoundaries = [agentsBoundary, ".ralphy/progress.txt", ".ralphy/compete-results.tsv"];
+	const allBoundaries = [...systemBoundaries, ...userBoundaries];
+	parts.push(`## Boundaries\nDo NOT modify these files:\n${allBoundaries.map((b) => `- ${b}`).join("\n")}`);
+
+	// Browser
+	if (isBrowserAvailable(browserEnabled)) {
+		parts.push(getBrowserInstructions());
+	}
+
+	// Competition context
+	parts.push(`## Competition Task (Round ${round}/${totalRounds}, Agent ${agentNum}/${totalAgents})\n${task}`);
+	parts.push("You are one of multiple agents competing to produce the best solution. An evaluation script will score each agent's output. The best-scoring solution wins.");
+
+	if (previousWinnerScore !== undefined) {
+		parts.push(`## Previous Round Winner\nScore: ${previousWinnerScore.toFixed(6)}${previousWinnerDescription ? `\nApproach: ${previousWinnerDescription}` : ""}\nYour goal: beat this score with a better or different approach.`);
+	}
+
+	if (scoreHistory) {
+		parts.push(`## Competition History\n\`\`\`\n${scoreHistory}\n\`\`\``);
+	}
+
+	// Instructions
+	const instructions = ["1. Implement the task with the best possible approach"];
+	let step = 2;
+
+	if (!skipTests) {
+		instructions.push(`${step}. Run tests and ensure they pass`);
+		step++;
+	}
+	if (!skipLint) {
+		instructions.push(`${step}. Run linting and ensure it passes`);
+		step++;
+	}
+
+	instructions.push(`${step}. Ensure the code runs correctly`);
+	step++;
+	instructions.push(`${step}. Commit your changes with a descriptive message explaining your approach`);
+
+	parts.push(`## Instructions\n${instructions.join("\n")}`);
+
+	return parts.join("\n\n");
+}

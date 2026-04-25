@@ -36,6 +36,28 @@ ralphy --yaml tasks.yaml
 
 Use `--prd` for Markdown files or folders only. Use `--yaml` for `.yaml` / `.yml` task files.
 
+## Iterative Optimization
+
+Run a single agent in an automated loop: modify code → evaluate → keep or discard → repeat.
+
+```bash
+ralphy --optimize --evaluate "node eval.js" "optimize the sorting algorithm"
+ralphy --optimize --evaluate "python bench.py" --optimize-rounds 30 --prd PRD.md
+```
+
+The evaluation script prints a numeric score (`{"score": 0.95}` or plain `0.95`). If the score improves, changes are committed; otherwise they are rolled back via `git reset`. Score history is injected into subsequent prompts so the agent learns across rounds. Results log: `.ralphy/optimize-results.tsv`.
+
+## Multi-Agent Competition
+
+N agents solve the same task in parallel, each is evaluated, the best wins. Repeat for multiple rounds.
+
+```bash
+ralphy --compete --evaluate "node eval.js" --compete-agents 3 "implement caching"
+ralphy --compete --evaluate "python test.py" --compete-agents 5 --compete-rounds 3 --prd PRD.md
+```
+
+Each agent works in its own git worktree. After all finish, the evaluation script runs on each. The winning branch is merged; losers are discarded. Next round starts from the winner's code. Results log: `.ralphy/compete-results.tsv`.
+
 ## Project Config
 
 Optional. Stores rules the AI must follow.

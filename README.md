@@ -116,6 +116,100 @@ ralphy --yaml tasks.yaml
 
 Use `--prd` for Markdown files or folders only. Use `--yaml` for `.yaml` / `.yml` task files.
 
+## Iterative Optimization
+
+Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch). Give ralphy a task and an evaluation script — it will modify code, evaluate, keep or discard, and repeat automatically.
+
+```bash
+ralphy --optimize --evaluate "node eval.js" "optimize the sorting algorithm"
+ralphy --optimize --evaluate "python bench.py" --optimize-rounds 30 --prd PRD.md
+```
+
+How it works:
+1. Agent modifies code to improve a metric
+2. Evaluation script runs and returns a score
+3. If the score improved → git commit (keep). If not → git reset (discard)
+4. Score history is injected into the next prompt so the agent learns from previous rounds
+5. Repeat for N rounds
+
+**Evaluation script interface** — your script just needs to print a score:
+```bash
+# Option 1: JSON object
+echo '{"score": 0.95}'
+
+# Option 2: plain number
+echo '0.95'
+
+# Option 3: key-value (like autoresearch)
+echo 'val_bpb: 0.997'
+```
+Exit code 0 = success, non-zero = crash (round is discarded).
+
+Flags:
+```bash
+--optimize                  # enable iterative optimization mode
+--evaluate <script>         # evaluation script (required)
+--optimize-rounds <n>       # max rounds (default: 20)
+--metric-objective <type>   # minimize | maximize | pass-fail (default: maximize)
+```
+
+Results are logged to `.ralphy/optimize-results.tsv`.
+
+## Multi-Agent Competition
+
+Run N agents on the same task in parallel, evaluate each, pick the winner, and continue from the best solution.
+
+```bash
+ralphy --compete --evaluate "node eval.js" "implement caching layer"
+ralphy --compete --evaluate "python test.py" --compete-agents 5 --compete-rounds 3 --prd PRD.md
+```
+
+How it works:
+1. Each round, N agents work on the same task in isolated git worktrees
+2. After all agents finish, the evaluation script runs on each worktree
+3. The agent with the best score wins — its branch is merged into the base
+4. All other branches are discarded
+5. Next round starts from the winner's code
+
+Flags:
+```bash
+--compete                   # enable competition mode
+--evaluate <script>         # evaluation script (required)
+--compete-agents <n>        # agents per round (default: 3)
+--compete-rounds <n>        # number of rounds (default: 5)
+--metric-objective <type>   # minimize | maximize | pass-fail (default: maximize)
+```
+
+Results are logged to `.ralphy/compete-results.tsv`.
+
+### Writing an Evaluation Script
+
+The evaluation script is the key to both modes. It should:
+- Run your tests, benchmarks, or quality checks
+- Print a numeric score to stdout
+- Exit with code 0 on success, non-zero on failure
+
+Example `eval.js`:
+```javascript
+const { execSync } = require('child_process');
+try {
+  const result = execSync('npm test', { encoding: 'utf-8' });
+  const passed = (result.match(/passing/g) || []).length;
+  console.log(JSON.stringify({ score: passed }));
+} catch (e) {
+  process.exit(1);
+}
+```
+
+Example `bench.py`:
+```python
+import subprocess, json, time
+start = time.time()
+subprocess.run(["python", "main.py"], check=True)
+elapsed = time.time() - start
+print(json.dumps({"score": 1.0 / elapsed}))  # faster = higher score
+```
+
 ## Project Config
 
 Optional. Stores rules the AI must follow.
@@ -449,6 +543,13 @@ ralphy --parallel --sandbox
 | `--dry-run` | preview only |
 | `--browser` | enable browser automation |
 | `--no-browser` | disable browser automation |
+| `--optimize` | iterative optimization mode (requires `--evaluate`) |
+| `--compete` | multi-agent competition mode (requires `--evaluate`) |
+| `--evaluate SCRIPT` | evaluation script that prints a score |
+| `--optimize-rounds N` | max optimization rounds (default: 20) |
+| `--compete-agents N` | agents per competition round (default: 3) |
+| `--compete-rounds N` | competition rounds (default: 5) |
+| `--metric-objective TYPE` | minimize, maximize, or pass-fail (default: maximize) |
 | `-v, --verbose` | debug output |
 | `--init` | setup .ralphy/ config |
 | `--config` | show config |
@@ -493,6 +594,10 @@ When an engine exits non-zero, ralphy includes the last lines of CLI output in t
 ## Changelog
 
 ### Unreleased
+- **Iterative Optimization mode** (`--optimize`): single-agent loop inspired by autoresearch — run, evaluate, keep/discard, repeat
+- **Multi-Agent Competition mode** (`--compete`): N agents solve the same task in parallel, evaluate each, pick the winner
+- New flags: `--optimize`, `--compete`, `--evaluate`, `--optimize-rounds`, `--compete-agents`, `--compete-rounds`, `--metric-objective`
+- Results logged to `.ralphy/optimize-results.tsv` and `.ralphy/compete-results.tsv`
 - Codex usage-limit auto-resume: wait until the provider retry time when available, otherwise fall back to `5.5` hours
 - new flags: `--usage-limit-wait-hours` and `--no-usage-limit-resume`
 - Codex engine parsing: preserve multiline usage-limit error messages for retry handling

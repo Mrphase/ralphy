@@ -413,6 +413,30 @@ D:\D_Code_2\ralph\ralphy\ralphy.ps1 --qgenie --model azure::gpt-5.3-codex --effo
 - `--knowledge-context <n>`：注入最近学习条数。
 - `--knowledge-max-chars <n>`：知识注入的字符上限。
 
+### 迭代优化与竞争
+
+- `--optimize`：迭代优化模式（需要 `--evaluate`）。
+- `--compete`：多 Agent 竞争模式（需要 `--evaluate`）。
+- `--evaluate <script>`：评估脚本，输出分数。
+- `--optimize-rounds <n>`：优化最大轮数（默认 20）。
+- `--compete-agents <n>`：每轮竞争 agent 数（默认 3）。
+- `--compete-rounds <n>`：竞争轮数（默认 5）。
+- `--metric-objective <type>`：`minimize`、`maximize`、`pass-fail`（默认 `maximize`）。
+
+示例：
+
+```powershell
+# 单 agent 迭代优化：改代码 → 评估 → 保留/丢弃 → 重复
+D:\D_Code_2\ralph\ralphy\ralphy.ps1 --codex --optimize --evaluate "node eval.js" --optimize-rounds 20 "优化排序算法"
+
+# 3 个 agent 竞争并行解题，每轮选最优
+D:\D_Code_2\ralph\ralphy\ralphy.ps1 --claude --compete --evaluate "python test.py" --compete-agents 3 --compete-rounds 5 "实现缓存层"
+```
+
+评估脚本只需输出分数（JSON `{"score": 0.95}` 或纯数字 `0.95`），exit code 0 = 成功，非 0 = 崩溃。
+
+结果保存在 `.ralphy/optimize-results.tsv`（优化）或 `.ralphy/compete-results.tsv`（竞争）。
+
 ### 浏览器能力
 
 - `--browser`：强制开启 browser automation。
@@ -546,11 +570,88 @@ Set-Location D:\your-project
 D:\D_Code_2\ralph\ralphy\ralphy.ps1 --gemini --no-commit "Fix button label overflow in mobile header"
 ```
 
-## 12. 一句话总结
+## 12. 迭代优化与多 Agent 竞争
+
+这是 Ralphy 借鉴 [karpathy/autoresearch](https://github.com/karpathy/autoresearch) 思路新增的两个模式。与普通任务模式的核心区别是：**有客观的评估脚本自动打分**，而不是纯依赖 agent 自我判断。
+
+### 迭代优化模式（`--optimize`）
+
+单个 agent 反复改代码，每轮都用评估脚本打分。分数提升就 commit（保留），没提升就 git reset（丢弃）。
+
+```powershell
+D:\D_Code_2\ralph\ralphy\ralphy.ps1 --codex --optimize --evaluate "node eval.js" --optimize-rounds 20 "优化查询性能"
+```
+
+流程：
+
+1. 记录当前 commit hash（快照）
+2. 构建 prompt（包含任务 + 历史分数表 + 上轮评估反馈）
+3. 执行 agent
+4. 跑评估脚本 → 拿到分数
+5. 分数更好 → commit，否则 → git reset --hard 到快照
+6. 记录到 `.ralphy/optimize-results.tsv`
+7. 重复
+
+### 多 Agent 竞争模式（`--compete`）
+
+N 个 agent 并行解同一个任务，分别评估，选最优者。
+
+```powershell
+D:\D_Code_2\ralph\ralphy\ralphy.ps1 --claude --compete --evaluate "python test.py" --compete-agents 3 --compete-rounds 5 "实现缓存层"
+```
+
+流程：
+
+1. 创建 N 个 git worktree，每个 agent 在独立分支工作
+2. N 个 agent 并行解题
+3. 评估脚本在每个 worktree 里分别跑
+4. 最高分 agent 的分支合并到主分支，其他分支删除
+5. 下一轮从 winner 的代码继续
+
+### 写评估脚本
+
+评估脚本只需满足：
+
+- 输出一个分数到 stdout
+- exit code 0 = 成功，非 0 = 崩溃
+
+示例 `eval.js`：
+
+```javascript
+const { execSync } = require('child_process');
+try {
+  const output = execSync('npm test', { encoding: 'utf-8' });
+  const passed = (output.match(/passing/g) || []).length;
+  console.log(JSON.stringify({ score: passed }));
+} catch (e) {
+  process.exit(1);
+}
+```
+
+示例 `bench.py`：
+
+```python
+import subprocess, json, time
+start = time.time()
+subprocess.run(["python", "main.py"], check=True)
+elapsed = time.time() - start
+print(json.dumps({"score": 1.0 / elapsed}))  # 越快分数越高
+```
+
+### 什么时候用优化，什么时候用竞争
+
+- **优化** (`--optimize`)：适合算法调优、性能优化、模型超参调整等“反复试、逐步改进”的场景。
+- **竞争** (`--compete`)：适合“方案不确定，想让多个 agent 各自探索，然后选最好的”场景。
+
+两者都必须搭配 `--evaluate <script>`，没有评估脚本会报错。
+
+## 13. 一句话总结
 
 - `PRD.md` / `prd.yml` 管“这次做什么”。
 - `.ralphy/config.yaml` 管“怎么跑、跑哪些命令、哪些地方别碰”。
 - `.ralphy/AGENTS.md` 管“这个项目长期应该怎么做”。
 - `.ralphy/progress.md` 管“刚刚学到了什么”。
+- `--optimize` + `--evaluate` 管"自动迭代改进，靠分数决定保留还是丢弃"。
+- `--compete` + `--evaluate` 管"多 agent 并行竞争，靠分数选最优"。
 
-把这四层分清，Ralphy 第一次成功率会高很多。
+把这几层分清，Ralphy 第一次成功率会高很多。

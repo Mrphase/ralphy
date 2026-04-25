@@ -68,6 +68,13 @@ export function createProgram(): Command {
 		.option("--no-knowledge", "Disable cross-iteration knowledge system")
 		.option("--knowledge-context <n>", "Number of recent learnings to inject into prompts", "10")
 		.option("--knowledge-max-chars <n>", "Maximum characters of knowledge to inject", "8000")
+		.option("--optimize", "Iterative optimization mode: run, evaluate, keep/discard, repeat")
+		.option("--compete", "Multi-agent competition: N agents solve same task, pick best")
+		.option("--evaluate <script>", "Evaluation script that prints a score (required for --optimize/--compete)")
+		.option("--optimize-rounds <n>", "Maximum optimization rounds", "20")
+		.option("--compete-agents <n>", "Number of competing agents per round", "3")
+		.option("--compete-rounds <n>", "Number of competition rounds", "5")
+		.option("--metric-objective <type>", "Metric objective: minimize, maximize, or pass-fail", "maximize")
 		.option("-v, --verbose", "Verbose output")
 		.allowUnknownOption();
 
@@ -192,6 +199,13 @@ export function parseArgs(args: string[]): {
 		knowledge: opts.knowledge !== false,
 		knowledgeContext: Number.parseInt(opts.knowledgeContext, 10) || 10,
 		knowledgeMaxChars: Number.parseInt(opts.knowledgeMaxChars, 10) || 8000,
+		optimize: opts.optimize || false,
+		compete: opts.compete || false,
+		evaluateScript: opts.evaluate || undefined,
+		optimizeMaxRounds: Number.parseInt(opts.optimizeRounds, 10) || 20,
+		competeAgents: Number.parseInt(opts.competeAgents, 10) || 3,
+		competeRounds: Number.parseInt(opts.competeRounds, 10) || 5,
+		metricObjective: (opts.metricObjective as "minimize" | "maximize" | "pass-fail") || "maximize",
 	};
 
 	return {

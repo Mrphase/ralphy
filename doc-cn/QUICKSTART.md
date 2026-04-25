@@ -306,7 +306,59 @@ E:\Ecode\ralphy\ralphy.ps1 --codex --dry-run --knowledge-max-chars 4000 "Do not 
 - 你希望按顺序逐条推进
 - 你希望每条完成后自动回写 PRD 状态
 
-## 10. 你最应该养成的习惯
+## 10. 迭代优化模式
+
+受 [karpathy/autoresearch](https://github.com/karpathy/autoresearch) 启发。给 Ralphy 一个任务和一个评估脚本，agent 会自动循环：改代码 → 跑评估 → 分数更好就保留，否则回滚。
+
+```powershell
+# 基本用法
+ralphy --optimize --evaluate "node eval.js" "优化排序算法"
+
+# 指定轮数和优化方向
+ralphy --optimize --evaluate "python bench.py" --optimize-rounds 30 --metric-objective minimize --prd PRD.md
+```
+
+工作原理：
+
+1. Agent 修改代码
+2. 评估脚本运行，返回分数
+3. 分数更好 → `git commit`（保留）；分数没提升 → `git reset`（丢弃）
+4. 分数历史会注入下一轮 prompt，让 agent 从历史经验中学习
+5. 重复 N 轮
+
+评估脚本只需要输出一个分数：
+
+```bash
+# JSON 格式
+echo '{"score": 0.95}'
+# 或纯数字
+echo '0.95'
+# 或 key: value 格式
+echo 'val_bpb: 0.997'
+```
+
+结果保存在 `.ralphy/optimize-results.tsv`。
+
+## 11. 多 Agent 竞争模式
+
+N 个 agent 并行解同一个任务，分别评估，选最优者保留，继续下一轮。
+
+```powershell
+ralphy --compete --evaluate "node eval.js" --compete-agents 3 "实现缓存层"
+ralphy --compete --evaluate "python test.py" --compete-agents 5 --compete-rounds 3 --prd PRD.md
+```
+
+工作原理：
+
+1. 每轮创建 N 个 git worktree，每个 agent 在独立分支上工作
+2. 所有 agent 并行解题
+3. 评估脚本在每个 worktree 里分别跑
+4. 最高分 agent 的分支合并到主分支，其他丢弃
+5. 下一轮从 winner 的代码继续
+
+结果保存在 `.ralphy/compete-results.tsv`。
+
+## 13. 你最应该养成的习惯
 
 推荐固定动作：
 

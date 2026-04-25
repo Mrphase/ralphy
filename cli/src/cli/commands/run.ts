@@ -4,6 +4,8 @@ import type { RuntimeOptions } from "../../config/types.ts";
 import { createEngine, isEngineAvailable } from "../../engines/index.ts";
 import type { AIEngineName } from "../../engines/types.ts";
 import { isBrowserAvailable } from "../../execution/browser.ts";
+import { runCompetition } from "../../execution/competition.ts";
+import { runIterativeOptimize } from "../../execution/iterative-optimize.ts";
 import { runParallel } from "../../execution/parallel.ts";
 import { type ExecutionResult, runSequential } from "../../execution/sequential.ts";
 import { getDefaultBaseBranch } from "../../git/branch.ts";
@@ -107,7 +109,11 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 
 	logInfo(`Starting Ralphy with ${engine.name}`);
 	logInfo(`Tasks remaining: ${remaining}`);
-	if (options.parallel) {
+	if (options.optimize) {
+		logInfo(`Mode: Iterative Optimization (max ${options.optimizeMaxRounds} rounds)`);
+	} else if (options.compete) {
+		logInfo(`Mode: Competition (${options.competeAgents} agents × ${options.competeRounds} rounds)`);
+	} else if (options.parallel) {
 		logInfo(`Mode: Parallel (max ${options.maxParallel} agents)`);
 	} else {
 		logInfo("Mode: Sequential");
@@ -128,7 +134,64 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 		maxChars: options.knowledgeMaxChars,
 	};
 
-	if (options.parallel) {
+	if (options.optimize || options.compete) {
+		// Validate: --evaluate is required
+		if (!options.evaluateScript) {
+			logError("--evaluate <script> is required for --optimize and --compete modes");
+			logInfo("Example: ralphy --optimize --evaluate \"node eval.js\" --prd PRD.md");
+			process.exit(1);
+		}
+
+		// Get the first task from the PRD to use as the optimization/competition target
+		const firstTask = await taskSource.getNextTask();
+		if (!firstTask) {
+			logError("No task found in PRD for optimization/competition");
+			process.exit(1);
+		}
+		const taskText = firstTask.body || firstTask.title;
+
+		const evaluateConfig = {
+			script: options.evaluateScript,
+			objective: options.metricObjective,
+		};
+
+		if (options.optimize) {
+			result = await runIterativeOptimize({
+				engine,
+				task: taskText,
+				workDir,
+				evaluateConfig,
+				maxRounds: options.optimizeMaxRounds,
+				skipTests: options.skipTests,
+				skipLint: options.skipLint,
+				maxRetries: options.maxRetries,
+				retryDelay: options.retryDelay,
+				browserEnabled: options.browserEnabled,
+				modelOverride: options.modelOverride,
+				reasoningEffort: options.reasoningEffort,
+				engineArgs: options.engineArgs,
+				knowledge: knowledgeOptions,
+			});
+		} else {
+			result = await runCompetition({
+				engine,
+				task: taskText,
+				workDir,
+				evaluateConfig,
+				numAgents: options.competeAgents,
+				numRounds: options.competeRounds,
+				skipTests: options.skipTests,
+				skipLint: options.skipLint,
+				maxRetries: options.maxRetries,
+				retryDelay: options.retryDelay,
+				browserEnabled: options.browserEnabled,
+				modelOverride: options.modelOverride,
+				reasoningEffort: options.reasoningEffort,
+				engineArgs: options.engineArgs,
+				knowledge: knowledgeOptions,
+			});
+		}
+	} else if (options.parallel) {
 		result = await runParallel({
 			engine,
 			taskSource,
