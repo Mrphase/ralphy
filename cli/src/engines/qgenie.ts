@@ -15,11 +15,12 @@ import {
 } from "./base.ts";
 import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
 
-const DEFAULT_QGENIE_MODEL = "azure::gpt-5.4";
+const DEFAULT_QGENIE_MODEL = "azure::gpt-5.5";
 const DEFAULT_QGENIE_REASONING_EFFORT = "xhigh";
 const DEFAULT_QGENIE_CONTEXT_WINDOW = 1_000_000;
 const QGENIE_FALLBACK_MODELS = [
 	DEFAULT_QGENIE_MODEL,
+	"azure::gpt-5.4",
 	"azure::gpt-5.3-codex",
 	"anthropic::claude-4-6-opus",
 	"anthropic::claude-4-6-opus:1M",
@@ -57,7 +58,7 @@ const QGENIE_FALLBACK_ERROR_PATTERNS = [
  * QGenie CLI AI Engine
  *
  * CLI invocation: `qgenie agent exec`
- * Default model: azure::gpt-5.4
+ * Default model: azure::gpt-5.5
  * Default reasoning effort: xhigh
  * Default context window: 1000000
  * Reasoning effort can be overridden via `-c model_reasoning_effort="..."`

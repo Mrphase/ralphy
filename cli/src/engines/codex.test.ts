@@ -13,13 +13,11 @@ describe("CodexEngine", () => {
 
 	function readCodexDisplayLog(workDir: string): string {
 		const logDir = join(workDir, ".ralphy", "logs");
-		const logFiles = readdirSync(logDir).filter(
-			(file) => file.startsWith("codex-") && file.endsWith(".log"),
-		);
+		const logFiles = readdirSync(logDir).filter((file) => file.endsWith(".log"));
 
 		expect(logFiles).toHaveLength(1);
 
-		return readFileSync(join(logDir, logFiles[0]), "utf-8");
+		return readFileSync(join(logDir, logFiles[0] as string), "utf-8");
 	}
 
 	function writeLastMessageFile(args: string[], content: string): void {
@@ -223,6 +221,113 @@ describe("CodexEngine", () => {
 			expect(logBody).not.toContain("[31;1m");
 			expect(logBody).not.toContain("[cmd:done]");
 			expect(logBody).not.toContain("python scripts/fail.py --flag");
+		} finally {
+			execSpy.mockRestore();
+		}
+	});
+
+	it("uses the default Codex model when no override is provided", async () => {
+		let capturedArgs: string[] = [];
+
+		const execSpy = spyOn(baseModule, "execCommandStreaming").mockImplementation(
+			async (_cmd, args, _cwd) => {
+				capturedArgs = args;
+				writeLastMessageFile(args, "Task completed successfully. ok");
+				return { exitCode: 0 };
+			},
+		);
+
+		try {
+			const result = await engine.execute("test prompt", testWorkDir);
+			expect(result.success).toBe(true);
+			const modelIndex = capturedArgs.indexOf("--model");
+			expect(modelIndex).toBeGreaterThanOrEqual(0);
+			expect(capturedArgs[modelIndex + 1]).toBe("gpt-5.5");
+		} finally {
+			execSpy.mockRestore();
+		}
+	});
+
+	it("respects modelOverride and does not fall back when the override succeeds", async () => {
+		const capturedModels: string[] = [];
+
+		const execSpy = spyOn(baseModule, "execCommandStreaming").mockImplementation(
+			async (_cmd, args, _cwd) => {
+				const modelIndex = args.indexOf("--model");
+				capturedModels.push(args[modelIndex + 1] as string);
+				writeLastMessageFile(args, "Task completed successfully. ok");
+				return { exitCode: 0 };
+			},
+		);
+
+		try {
+			const result = await engine.execute("test prompt", testWorkDir, {
+				modelOverride: "gpt-5.4",
+			});
+			expect(result.success).toBe(true);
+			expect(capturedModels).toEqual(["gpt-5.4"]);
+		} finally {
+			execSpy.mockRestore();
+		}
+	});
+
+	it("falls back to the next Codex model when the initial model errors out", async () => {
+		const capturedModels: string[] = [];
+
+		const execSpy = spyOn(baseModule, "execCommandStreaming").mockImplementation(
+			async (_cmd, args, _cwd, onLine) => {
+				const modelIndex = args.indexOf("--model");
+				const model = args[modelIndex + 1] as string;
+				capturedModels.push(model);
+
+				if (capturedModels.length === 1) {
+					onLine(
+						JSON.stringify({ type: "error", message: "model unavailable" }),
+						"stdout",
+					);
+					return { exitCode: 1 };
+				}
+
+				writeLastMessageFile(args, "Task completed successfully. fallback ok");
+				return { exitCode: 0 };
+			},
+		);
+
+		try {
+			const result = await engine.execute("test prompt", testWorkDir);
+			expect(result.success).toBe(true);
+			expect(result.response).toBe("fallback ok");
+			expect(capturedModels).toEqual(["gpt-5.5", "gpt-5.4"]);
+		} finally {
+			execSpy.mockRestore();
+		}
+	});
+
+	it("does not fall back when Codex reports a usage-limit error", async () => {
+		const capturedModels: string[] = [];
+
+		const execSpy = spyOn(baseModule, "execCommandStreaming").mockImplementation(
+			async (_cmd, args, _cwd, onLine) => {
+				const modelIndex = args.indexOf("--model");
+				capturedModels.push(args[modelIndex + 1] as string);
+
+				onLine(
+					JSON.stringify({
+						type: "error",
+						message:
+							"You've hit your usage limit. To get more access now, send a request to your admin or try again at 2:57 PM.",
+					}),
+					"stdout",
+				);
+				return { exitCode: 1 };
+			},
+		);
+
+		try {
+			const result = await engine.execute("test prompt", testWorkDir);
+			expect(result.success).toBe(false);
+			expect(result.error || "").toMatch(/usage limit/i);
+			expect(capturedModels).toEqual(["gpt-5.5"]);
 		} finally {
 			execSpy.mockRestore();
 		}

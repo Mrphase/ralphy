@@ -13,7 +13,7 @@ describe("QGenieEngine", () => {
 	const originalInvocation = process.env.RALPHY_INVOCATION;
 	const noisyQGenieStderr = [
 		"\u001b[90mQGenie CLI v1.2.3\u001b[0m",
-		"> qgenie agent exec --full-auto -C D:\\repo --skip-git-repo-check --model azure::gpt-5.4",
+		"> qgenie agent exec --full-auto -C D:\\repo --skip-git-repo-check --model azure::gpt-5.5",
 		"Thinking through the failing tests...",
 		"Applied the requested change",
 	].join("\n");
@@ -74,7 +74,7 @@ describe("QGenieEngine", () => {
 
 		expect(capturedArgs).toContain("--model");
 		const modelIndex = capturedArgs.indexOf("--model");
-		expect(capturedArgs[modelIndex + 1]).toBe("azure::gpt-5.4");
+		expect(capturedArgs[modelIndex + 1]).toBe("azure::gpt-5.5");
 		expect(capturedArgs).toEqual(
 			expect.arrayContaining([
 				"-c",
@@ -102,7 +102,7 @@ describe("QGenieEngine", () => {
 		);
 
 		await engine.execute("test", testWorkDir, {
-			modelOverride: "azure::gpt-5.4",
+			modelOverride: "azure::gpt-5.5",
 			reasoningEffort: "xhigh",
 		});
 
@@ -206,7 +206,7 @@ describe("QGenieEngine", () => {
 
 			expect(result.success).toBe(true);
 			expect(result.response).toBe("Fallback model answered");
-			expect(capturedModels).toEqual(["azure::gpt-5.4", "azure::gpt-5.3-codex"]);
+			expect(capturedModels).toEqual(["azure::gpt-5.5", "azure::gpt-5.4"]);
 		} finally {
 			spy.mockRestore();
 		}
@@ -259,8 +259,8 @@ describe("QGenieEngine", () => {
 			expect(onProgressCalls).toContain("Switching model");
 			expect(onProgressCalls).toContain("Thinking");
 			expect(capturedArgs).toHaveLength(2);
-			expect(capturedArgs[0]).toContain("azure::gpt-5.4");
-			expect(capturedArgs[1]).toContain("azure::gpt-5.3-codex");
+			expect(capturedArgs[0]).toContain("azure::gpt-5.5");
+			expect(capturedArgs[1]).toContain("azure::gpt-5.4");
 			expect(capturedArgs[1]).toContain('model_reasoning_effort="xhigh"');
 			expect(capturedArgs[1]).toContain("model_context_window=1000000");
 		} finally {

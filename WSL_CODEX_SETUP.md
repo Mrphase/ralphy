@@ -169,7 +169,7 @@ Useful flags:
 Example:
 
 ```bash
-./ralphy-wsl.sh --codex --model gpt-5.4 "summarize the repo structure" -- --profile default
+./ralphy-wsl.sh --codex --model gpt-5.5 "summarize the repo structure" -- --profile default
 ```
 
 To inspect the next prompt without executing the task:

@@ -135,7 +135,7 @@ Useful flags:
 Example with direct Codex flags:
 
 ```powershell
-.\ralphy.ps1 --codex --model gpt-5.4 "summarize the repo structure" -- --profile default
+.\ralphy.ps1 --codex --model gpt-5.5 "summarize the repo structure" -- --profile default
 ```
 
 To inspect the next prompt without executing the task:
