@@ -63,6 +63,10 @@ export function createProgram(): Command {
 		.option("--no-browser", "Disable browser automation")
 		.option("--model <name>", "Override default model for the engine")
 		.option("--effort <level>", "Override reasoning effort for supported engines")
+		.option(
+			"--goal [description]",
+			"Codex /goal mode: prepend a `/goal [description]` slash-command before the Task section (codex only)",
+		)
 		.option("--sonnet", "Shortcut for --claude --model sonnet")
 		.option("--no-merge", "Skip automatic branch merging after parallel execution")
 		.option("--no-knowledge", "Disable cross-iteration knowledge system")
@@ -106,7 +110,18 @@ export function parseArgs(args: string[]): {
 	program.parse(ralphyArgs);
 
 	const opts = program.opts();
-	const [firstArg, secondArg] = program.args;
+	let [firstArg, secondArg] = program.args;
+
+	// Commander's optional-value flag (`--goal [description]`) is greedy: a bare
+	// `--goal` followed by a positional task will swallow the task as the value.
+	// Disambiguate: if a string was consumed but no positional task remains,
+	// treat it as bare `--goal` and restore the value as the task. Users who
+	// truly want a description should pass `--goal=<text>` (or place the task
+	// before `--goal`).
+	if (typeof opts.goal === "string" && firstArg === undefined) {
+		firstArg = opts.goal;
+		opts.goal = true;
+	}
 
 	// Handle `ralphy knowledge show|reset` subcommand
 	let knowledgeCommand: "show" | "reset" | undefined;
@@ -135,6 +150,19 @@ export function parseArgs(args: string[]): {
 	// Determine model override (--sonnet is shortcut for --model sonnet)
 	const modelOverride = opts.sonnet ? "sonnet" : opts.model || undefined;
 	const reasoningEffort = opts.effort || undefined;
+
+	// --goal can be bare (boolean true) or carry an optional description string.
+	let goalMode = false;
+	let goalDescription: string | undefined;
+	if (opts.goal === true) {
+		goalMode = true;
+	} else if (typeof opts.goal === "string") {
+		goalMode = true;
+		const trimmed = opts.goal.trim();
+		if (trimmed.length > 0) {
+			goalDescription = trimmed;
+		}
+	}
 
 	// Determine PRD source with auto-detection for file vs folder
 	let prdSource: "markdown" | "markdown-folder" | "yaml" | "json" | "github" = "markdown";
@@ -193,6 +221,8 @@ export function parseArgs(args: string[]): {
 		browserEnabled: opts.browser === true ? "true" : opts.browser === false ? "false" : "auto",
 		modelOverride,
 		reasoningEffort,
+		goalMode,
+		goalDescription,
 		skipMerge: opts.merge === false,
 		useSandbox: opts.sandbox || false,
 		engineArgs,

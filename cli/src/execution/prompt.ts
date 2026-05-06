@@ -20,6 +20,10 @@ interface PromptOptions {
 	prdFile?: string;
 	/** Knowledge system options */
 	knowledge?: KnowledgeOptions;
+	/** Codex /goal mode: prepend `/goal` slash-command immediately before `## Task` */
+	goalMode?: boolean;
+	/** Optional description following `/goal` */
+	goalDescription?: string;
 }
 
 /**
@@ -59,6 +63,8 @@ export function buildPrompt(options: PromptOptions): string {
 		skipLint = false,
 		prdFile,
 		knowledge,
+		goalMode = false,
+		goalDescription,
 	} = options;
 
 	const parts: string[] = [];
@@ -133,7 +139,12 @@ export function buildPrompt(options: PromptOptions): string {
 		parts.push(getBrowserInstructions());
 	}
 
-	// Add the task
+	// Add the task — if /goal mode is requested (codex), prepend the slash-command
+	// as its own paragraph immediately before `## Task` so codex parses it natively.
+	if (goalMode) {
+		const goalLine = goalDescription ? `/goal ${goalDescription}` : "/goal";
+		parts.push(goalLine);
+	}
 	parts.push(`## Task\n${task}`);
 
 	// Add instructions

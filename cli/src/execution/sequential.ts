@@ -38,6 +38,10 @@ export interface ExecutionOptions {
 	modelOverride?: string;
 	/** Override reasoning effort for engines that support it */
 	reasoningEffort?: string;
+	/** Codex /goal mode: prepend `/goal` slash-command to prompt */
+	goalMode?: boolean;
+	/** Optional description for /goal */
+	goalDescription?: string;
 	/** Skip automatic branch merging after parallel execution */
 	skipMerge?: boolean;
 	/** Use lightweight sandboxes instead of git worktrees for parallel execution */
@@ -134,6 +138,8 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 			skipLint,
 			prdFile: options.prdFile,
 			knowledge,
+			goalMode: options.goalMode,
+			goalDescription: options.goalDescription,
 		});
 
 		// Execute with spinner

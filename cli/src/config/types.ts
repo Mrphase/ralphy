@@ -121,6 +121,10 @@ export interface RuntimeOptions {
 	modelOverride?: string;
 	/** Override reasoning effort for engines that support it */
 	reasoningEffort?: string;
+	/** Codex /goal mode: prepend a `/goal` slash-command to the prompt (codex only) */
+	goalMode?: boolean;
+	/** Optional description appended after `/goal` */
+	goalDescription?: string;
 	/** Skip automatic branch merging after parallel execution */
 	skipMerge?: boolean;
 	/** Use lightweight sandboxes instead of git worktrees for parallel execution */

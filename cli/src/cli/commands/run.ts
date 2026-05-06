@@ -109,6 +109,28 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 
 	logInfo(`Starting Ralphy with ${engine.name}`);
 	logInfo(`Tasks remaining: ${remaining}`);
+
+	// --goal is a codex-only feature (relies on Codex's /goal slash-command).
+	// Warn and disable for other engines so the prompt isn't polluted.
+	if (options.goalMode && options.aiEngine !== "codex") {
+		logWarn(
+			`--goal is a Codex-only feature; ignoring it for engine '${options.aiEngine}'.`,
+		);
+		options.goalMode = false;
+		options.goalDescription = undefined;
+	} else if (options.goalMode && (options.parallel || options.optimize || options.compete)) {
+		logWarn(
+			"--goal is currently supported only in sequential mode; ignoring it for parallel/optimize/compete runs.",
+		);
+		options.goalMode = false;
+		options.goalDescription = undefined;
+	} else if (options.goalMode) {
+		logInfo(
+			options.goalDescription
+				? `Codex /goal mode enabled: "${options.goalDescription}"`
+				: "Codex /goal mode enabled",
+		);
+	}
 	if (options.optimize) {
 		logInfo(`Mode: Iterative Optimization (max ${options.optimizeMaxRounds} rounds)`);
 	} else if (options.compete) {
@@ -250,6 +272,8 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			engineArgs: options.engineArgs,
 			syncIssue: options.syncIssue,
 			knowledge: knowledgeOptions,
+			goalMode: options.goalMode,
+			goalDescription: options.goalDescription,
 		});
 	}
 

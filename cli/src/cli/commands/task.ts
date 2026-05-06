@@ -12,7 +12,7 @@ import {
 	withCodexUsageLimitResume,
 } from "../../execution/usage-limit.ts";
 import { sendNotifications } from "../../notifications/webhook.ts";
-import { formatTokens, logError, logInfo, setVerbose } from "../../ui/logger.ts";
+import { formatTokens, logError, logInfo, logWarn, setVerbose } from "../../ui/logger.ts";
 import { notifyTaskComplete, notifyTaskFailed } from "../../ui/notify.ts";
 import { buildActiveSettings } from "../../ui/settings.ts";
 import { ProgressSpinner } from "../../ui/spinner.ts";
@@ -43,6 +43,21 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 
 	logInfo(`Running task with ${engine.name}...`);
 
+	// --goal is a Codex-only feature; warn and disable for other engines.
+	if (options.goalMode && options.aiEngine !== "codex") {
+		logWarn(
+			`--goal is a Codex-only feature; ignoring it for engine '${options.aiEngine}'.`,
+		);
+		options.goalMode = false;
+		options.goalDescription = undefined;
+	} else if (options.goalMode) {
+		logInfo(
+			options.goalDescription
+				? `Codex /goal mode enabled: "${options.goalDescription}"`
+				: "Codex /goal mode enabled",
+		);
+	}
+
 	// Check browser availability
 	if (isBrowserAvailable(options.browserEnabled)) {
 		logInfo("Browser automation enabled (agent-browser)");
@@ -61,6 +76,8 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 			contextWindow: options.knowledgeContext,
 			maxChars: options.knowledgeMaxChars,
 		},
+		goalMode: options.goalMode,
+		goalDescription: options.goalDescription,
 	});
 
 	// Build active settings for display

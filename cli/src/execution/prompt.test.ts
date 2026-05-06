@@ -483,4 +483,47 @@ describe("buildParallelPrompt", () => {
 			expect(boundariesIndex).toBeGreaterThan(taskIndex);
 		});
 	});
+
+        describe("Codex /goal mode", () => {
+                const goalWorkDir = join(tmpdir(), "prompt-test-goal");
+                const goalRalphyDir = join(goalWorkDir, ".ralphy");
+
+                beforeEach(() => {
+                        mkdirSync(goalRalphyDir, { recursive: true });
+                });
+
+                afterEach(() => {
+                        rmSync(goalWorkDir, { recursive: true, force: true });
+                });
+
+                it("does not inject /goal when goalMode is false", () => {
+                        const result = buildPrompt({
+                                task: "Test task",
+                                workDir: goalWorkDir,
+                        });
+
+                        expect(result).not.toContain("/goal");
+                });
+
+                it("prepends bare /goal immediately before the Task section", () => {
+                        const result = buildPrompt({
+                                task: "Test task",
+                                workDir: goalWorkDir,
+                                goalMode: true,
+                        });
+
+                        expect(result).toContain("\n\n/goal\n\n## Task\nTest task");
+                });
+
+                it("prepends /goal <description> immediately before the Task section", () => {
+                        const result = buildPrompt({
+                                task: "Test task",
+                                workDir: goalWorkDir,
+                                goalMode: true,
+                                goalDescription: "ship v2",
+                        });
+
+                        expect(result).toContain("\n\n/goal ship v2\n\n## Task\nTest task");
+                });
+        });
 });
