@@ -3,13 +3,9 @@ import { join } from "node:path";
 import simpleGit from "simple-git";
 import { RALPHY_DIR } from "../config/loader.ts";
 import type { AIEngine } from "../engines/types.ts";
-import {
-	cleanupAgentWorktree,
-	createAgentWorktree,
-	getWorktreeBase,
-} from "../git/worktree.ts";
-import { deleteLocalBranch, mergeAgentBranch } from "../git/merge.ts";
 import { getCurrentBranch } from "../git/branch.ts";
+import { deleteLocalBranch, mergeAgentBranch } from "../git/merge.ts";
+import { cleanupAgentWorktree, createAgentWorktree, getWorktreeBase } from "../git/worktree.ts";
 import type { KnowledgeOptions } from "../knowledge/index.ts";
 import { PROGRESS_MD_FILE, appendLearning } from "../knowledge/manager.ts";
 import { logDebug, logError, logInfo, logSuccess, logWarn } from "../ui/logger.ts";
@@ -19,11 +15,11 @@ import {
 	type ResultEntry,
 	appendResultsLog,
 	formatResultsTable,
-	isBetterScore,
 	runEvaluation,
 } from "./evaluate.ts";
 import { buildCompetitionPrompt } from "./prompt.ts";
 import { isRetryableError, withRetry } from "./retry.ts";
+import { selectBestImprovingCandidate } from "./selection.ts";
 import type { ExecutionResult } from "./sequential.ts";
 
 export interface CompetitionOptions {
@@ -43,6 +39,18 @@ export interface CompetitionOptions {
 	engineArgs?: string[];
 	knowledge?: KnowledgeOptions;
 }
+
+export interface CompetitionDependencies {
+	evaluate: typeof runEvaluation;
+	selectBestImprovingCandidate: typeof selectBestImprovingCandidate;
+	mergeAgentBranch: typeof mergeAgentBranch;
+}
+
+const DEFAULT_COMPETITION_DEPENDENCIES: CompetitionDependencies = {
+	evaluate: runEvaluation,
+	selectBestImprovingCandidate,
+	mergeAgentBranch,
+};
 
 interface AgentScore {
 	agentNum: number;
@@ -67,6 +75,7 @@ interface AgentScore {
  */
 export async function runCompetition(
 	options: CompetitionOptions,
+	dependencies: CompetitionDependencies = DEFAULT_COMPETITION_DEPENDENCIES,
 ): Promise<ExecutionResult> {
 	const {
 		engine,
@@ -100,7 +109,9 @@ export async function runCompetition(
 	let previousWinnerDescription: string | undefined;
 
 	logInfo(`Starting competition: "${task}"`);
-	logInfo(`Rounds: ${numRounds} | Agents per round: ${numAgents} | Objective: ${evaluateConfig.objective} | Eval: ${evaluateConfig.script}`);
+	logInfo(
+		`Rounds: ${numRounds} | Agents per round: ${numAgents} | Objective: ${evaluateConfig.objective} | Eval: ${evaluateConfig.script}`,
+	);
 	console.log("");
 
 	for (let round = 1; round <= numRounds; round++) {
@@ -108,6 +119,26 @@ export async function runCompetition(
 
 		const baseBranch = (await getCurrentBranch(workDir)) || "main";
 		const worktreeBase = getWorktreeBase(workDir);
+
+		const baselineResult = await dependencies.evaluate(evaluateConfig, workDir);
+		if (!baselineResult.success || baselineResult.score === undefined) {
+			const reason = baselineResult.error?.substring(0, 80) || "no score returned";
+			logError(`Competition baseline evaluation failed: ${reason}`);
+
+			const entry: ResultEntry = {
+				round,
+				score: null,
+				status: "crash",
+				description: `baseline evaluation failed: ${reason}`,
+			};
+			entries.push(entry);
+			appendResultsLog(resultsLog, entry);
+			result.tasksFailed++;
+			continue;
+		}
+
+		const baselineScore = baselineResult.score;
+		logInfo(`Baseline score: ${baselineScore.toFixed(6)}`);
 
 		// 1. Create worktrees and run agents in parallel
 		const agentPromises: Promise<AgentScore>[] = [];
@@ -135,6 +166,7 @@ export async function runCompetition(
 						engineArgs,
 						knowledge,
 						evaluateConfig,
+						evaluate: dependencies.evaluate,
 						previousWinnerScore,
 						previousWinnerDescription,
 						scoreHistory: formatResultsTable(entries),
@@ -177,37 +209,49 @@ export async function runCompetition(
 			continue;
 		}
 
-		// Find best score
-		let winner: AgentScore | null = null;
-		for (const agent of successfulAgents) {
-			if (agent.score === null) continue;
-			if (winner === null || isBetterScore(agent.score, winner.score, evaluateConfig.objective)) {
-				winner = agent;
-			}
-		}
-
-		if (!winner || winner.score === null) {
-			spinner.error("Could not determine winner");
-			await cleanupRoundWorktrees(agentScores, workDir);
-			continue;
-		}
-
 		// Log all scores for this round
 		const scoresSummary = agentScores
 			.map((a) => `Agent ${a.agentNum}: ${a.score !== null ? a.score.toFixed(6) : "crash"}`)
 			.join(" | ");
 		logInfo(`Scores: ${scoresSummary}`);
+
+		const winner = dependencies.selectBestImprovingCandidate(
+			successfulAgents,
+			baselineScore,
+			evaluateConfig.objective,
+		);
+
+		if (!winner || winner.score === null) {
+			spinner.error(`No candidate improved the baseline (${baselineScore.toFixed(6)})`);
+
+			const entry: ResultEntry = {
+				round,
+				score: null,
+				status: "discard",
+				description: `no candidate improved baseline ${baselineScore.toFixed(6)} (${scoresSummary})`,
+			};
+			entries.push(entry);
+			appendResultsLog(resultsLog, entry);
+
+			await cleanupRoundWorktrees(agentScores, workDir);
+			continue;
+		}
+
 		spinner.success(`Winner: Agent ${winner.agentNum} (score: ${winner.score.toFixed(6)})`);
 
 		// 3. Merge winner into base branch
 		try {
 			await git.checkout(baseBranch);
-			const mergeResult = await mergeAgentBranch(winner.branchName, workDir);
+			const mergeResult = await dependencies.mergeAgentBranch(
+				winner.branchName,
+				baseBranch,
+				workDir,
+			);
 			if (mergeResult.success) {
 				logSuccess(`Merged winning branch: ${winner.branchName}`);
 				result.tasksCompleted++;
 			} else {
-				logWarn(`Merge had conflicts, attempting resolution`);
+				logWarn("Merge had conflicts, attempting resolution");
 				// Force merge with theirs strategy for competition winner
 				await git.merge([winner.branchName, "--strategy-option", "theirs"]);
 				result.tasksCompleted++;
@@ -304,6 +348,7 @@ async function runSingleCompetitor(
 		engineArgs?: string[];
 		knowledge?: KnowledgeOptions;
 		evaluateConfig: EvaluateConfig;
+		evaluate: typeof runEvaluation;
 		previousWinnerScore?: number;
 		previousWinnerDescription?: string;
 		scoreHistory: string;
@@ -404,7 +449,7 @@ async function runSingleCompetitor(
 		}
 
 		// Run evaluation in the worktree
-		const evalResult = await runEvaluation(opts.evaluateConfig, worktreeDir);
+		const evalResult = await opts.evaluate(opts.evaluateConfig, worktreeDir);
 
 		return {
 			agentNum,
@@ -431,10 +476,7 @@ async function runSingleCompetitor(
 /**
  * Clean up all worktrees from a competition round.
  */
-async function cleanupRoundWorktrees(
-	agents: AgentScore[],
-	originalDir: string,
-): Promise<void> {
+async function cleanupRoundWorktrees(agents: AgentScore[], originalDir: string): Promise<void> {
 	for (const agent of agents) {
 		if (agent.worktreeDir) {
 			try {

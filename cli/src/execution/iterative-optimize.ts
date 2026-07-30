@@ -35,6 +35,14 @@ export interface IterativeOptimizeOptions {
 	knowledge?: KnowledgeOptions;
 }
 
+export interface OptimizeDependencies {
+	evaluate: typeof runEvaluation;
+}
+
+const DEFAULT_OPTIMIZE_DEPENDENCIES: OptimizeDependencies = {
+	evaluate: runEvaluation,
+};
+
 /**
  * Run iterative optimization: execute agent → evaluate → keep/discard → repeat.
  *
@@ -47,6 +55,7 @@ export interface IterativeOptimizeOptions {
  */
 export async function runIterativeOptimize(
 	options: IterativeOptimizeOptions,
+	dependencies: OptimizeDependencies = DEFAULT_OPTIMIZE_DEPENDENCIES,
 ): Promise<ExecutionResult> {
 	const {
 		engine,
@@ -80,8 +89,23 @@ export async function runIterativeOptimize(
 	let consecutiveCrashes = 0;
 
 	logInfo(`Starting iterative optimization: "${task}"`);
-	logInfo(`Max rounds: ${maxRounds} | Objective: ${evaluateConfig.objective} | Eval: ${evaluateConfig.script}`);
+	logInfo(
+		`Max rounds: ${maxRounds} | Objective: ${evaluateConfig.objective} | Eval: ${evaluateConfig.script}`,
+	);
 	console.log("");
+
+	const baselineResult = await dependencies.evaluate(evaluateConfig, workDir);
+	lastEvalOutput = baselineResult.output || baselineResult.error || "";
+	if (!baselineResult.success || baselineResult.score === undefined) {
+		logError(
+			`Baseline evaluation failed: ${baselineResult.error?.substring(0, 80) || "no score returned"}`,
+		);
+		result.tasksFailed++;
+		return result;
+	}
+
+	bestScore = baselineResult.score;
+	logInfo(`Baseline score: ${bestScore.toFixed(6)}`);
 
 	for (let round = 1; round <= maxRounds; round++) {
 		const spinner = new ProgressSpinner(`Round ${round}/${maxRounds}`);
@@ -199,7 +223,7 @@ export async function runIterativeOptimize(
 
 		// Run evaluation
 		spinner.updateStep("Evaluating");
-		const evalResult = await runEvaluation(evaluateConfig, workDir);
+		const evalResult = await dependencies.evaluate(evaluateConfig, workDir);
 		lastEvalOutput = evalResult.output || evalResult.error || "";
 
 		if (!evalResult.success || evalResult.score === undefined) {
@@ -275,7 +299,9 @@ export async function runIterativeOptimize(
 	const kept = entries.filter((e) => e.status === "keep").length;
 	const discarded = entries.filter((e) => e.status === "discard").length;
 	const crashed = entries.filter((e) => e.status === "crash").length;
-	logInfo(`Rounds: ${entries.length} | Kept: ${kept} | Discarded: ${discarded} | Crashed: ${crashed}`);
+	logInfo(
+		`Rounds: ${entries.length} | Kept: ${kept} | Discarded: ${discarded} | Crashed: ${crashed}`,
+	);
 	if (bestScore !== null) {
 		logSuccess(`Best score: ${bestScore.toFixed(6)}`);
 	}
@@ -296,7 +322,10 @@ export async function runIterativeOptimize(
 /**
  * Reset working directory to a specific commit, discarding all changes.
  */
-async function resetToSnapshot(git: ReturnType<typeof simpleGit>, commitHash: string): Promise<void> {
+async function resetToSnapshot(
+	git: ReturnType<typeof simpleGit>,
+	commitHash: string,
+): Promise<void> {
 	try {
 		await git.reset(["--hard", commitHash]);
 		await git.clean("f", ["-d"]);
