@@ -5,3 +5,4 @@ export * from "./parallel.ts";
 export * from "./evaluate.ts";
 export * from "./iterative-optimize.ts";
 export * from "./competition.ts";
+export * from "./selection.ts";
